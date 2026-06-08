@@ -406,865 +406,558 @@
             }
         }
 
-        document.getElementById('mobileBackBtn').addEventListener        let currentUser = null;
-        let isAdmin = false;
-        let selectedUser = null;
-        let unsubscribers = [];
+        document.getElementById('mobileBackBtn').addEventListener('click', () => {
+            document.getElementById('adminChatArea').classList.add('mobile-hidden');
+            document.getElementById('adminChatArea').classList.remove('mobile-show');
+            document.getElementById('adminSidebar').classList.remove('mobile-hidden');
+            selectedUser = null;
+        });
 
-        const loginScreen = document.getElementById('loginScreen');
-        const chatScreen = document.getElementById('chatScreen');
-        const adminScreen = document.getElementById('adminScreen');
-        const usernameInput = document.getElementById('usernameInput');
-        const loginBtn = document.getElementById('loginBtn');
-        const messageInput = document.getElementById('messageInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const messagesContainer = document.getElementById('messagesContainer');
-        const userList = document.getElementById('userList');
-        const adminChatArea = document.getElementById('adminChatArea');
-        const adminMessages = document.getElementById('adminMessages');
-        const adminMessageInput = document.getElementById('adminMessageInput');
-        const adminSendBtn = document.getElementById('adminSendBtn');
-        const currentChatHeader = document.getElementById('currentChatHeader');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const adminLogoutBtn = document.getElementById('adminLogoutBtn');
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
-            toast.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-xl z-50 animate-fade-in`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-
-        loginBtn.addEventListener('click', handleLogin);
-        usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
-
-        function handleLogin() {
-            const username = usernameInput.value.trim().toLowerCase();
-            if (!username) { showToast('Username দিন!', 'error'); return; }
-            currentUser = username;
-            isAdmin = username === 'admin';
-            if (isAdmin) showAdminScreen(); else showChatScreen();
-        }
-
-        function showChatScreen() {
-            loginScreen.classList.add('hidden');
-            chatScreen.classList.remove('hidden');
-            document.getElementById('chatUsername').textContent = currentUser;
-            loadUserMessages();
-        }
-
-        function showAdminScreen() {
-            loginScreen.classList.add('hidden');
-            adminScreen.classList.remove('hidden');
-            loadAdminUserList();
-        }
-
-        // ==========================================
-        // USER CHAT - NO orderBy (Index not needed!)
-        // ==========================================
-        async function loadUserMessages() {
-            unsubscribers.forEach(unsub => unsub());
-            unsubscribers = [];
-
-            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
-            const q = query(
-                collection(db, 'messages'),
-                where('participants', 'array-contains', currentUser)
-            );
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                messagesContainer.innerHTML = '';
-
-                if (snapshot.empty) {
-                    messagesContainer.innerHTML = `
-                        <div class="flex flex-col items-center justify-center h-full text-slate-400">
-                            <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
-                            <p>Admin কে message পাঠান!</p>
-                            <p class="text-sm opacity-60">আপনার সব message encrypted থাকবে</p>
-                        </div>`;
-                    return;
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 768) {
+                document.getElementById('adminSidebar').classList.remove('mobile-hidden');
+                if (selectedUser) {
+                    document.getElementById('adminChatArea').classList.remove('hidden');
                 }
-
-                // Client-side sorting by timestamp
-                const docs = snapshot.docs.sort((a, b) => {
-                    const ta = a.data().timestamp?.toMillis() || 0;
-                    const tb = b.data().timestamp?.toMillis() || 0;
-                    return ta - tb;
-                });
-
-                for (const docSnap of docs) {
-                    const data = docSnap.data();
-                    const decryptedText = await decryptMessage(data.encryptedText);
-                    const isSentByMe = data.sender === currentUser;
-                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isSentByMe ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
-                    msgDiv.innerHTML = `
-                        <div class="max-w-[80%] ${isSentByMe ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
-                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
-                            <div class="flex items-center justify-end gap-1 mt-1">
-                                <span class="text-xs opacity-60">${time}</span>
-                                ${isSentByMe ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
-                            </div>
-                        </div>`;
-                    messagesContainer.appendChild(msgDiv);
+            } else {
+                if (!selectedUser) {
+                    document.getElementById('adminSidebar').classList.remove('mobile-hidden');
+                    document.getElementById('adminChatArea').classList.add('hidden');
+                    document.getElementById('adminChatArea').classList.remove('mobile-show');
                 }
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }, (error) => {
-                console.error("Error:", error);
-                showToast('Error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        sendBtn.addEventListener('click', sendUserMessage);
-        messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendUserMessage(); });
-
-        async function sendUserMessage() {
-            const text = messageInput.value.trim();
-            if (!text) return;
-            const encrypted = await encryptMessage(text);
-            try {
-                await addDoc(collection(db, 'messages'), {
-                    sender: currentUser,
-                    receiver: 'admin',
-                    participants: [currentUser, 'admin'],
-                    encryptedText: encrypted,
-                    timestamp: serverTimestamp(),
-                    read: false
-                });
-                messageInput.value = '';
-                showToast('Message sent!', 'success');
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Error: ' + error.message, 'error');
             }
-        }
-
-        // ==========================================
-        // ADMIN PANEL - NO orderBy (Index not needed!)
-        // ==========================================
-        async function loadAdminUserList() {
-            const q = query(collection(db, 'messages'));
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                const users = new Map();
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const otherUser = data.sender === 'admin' ? data.receiver : data.sender;
-                    if (otherUser !== 'admin' && !users.has(otherUser)) {
-                        users.set(otherUser, {
-                            username: otherUser,
-                            lastMessage: data.encryptedText,
-                            timestamp: data.timestamp
-                        });
-                    }
-                });
-
-                userList.innerHTML = '';
-
-                if (users.size === 0) {
-                    userList.innerHTML = `
-                        <div class="p-8 text-center text-slate-400">
-                            <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
-                            <p class="text-sm">কোনো message নেই</p>
-                        </div>`;
-                    return;
-                }
-
-                users.forEach(async (userData) => {
-                    const decrypted = await decryptMessage(userData.lastMessage);
-                    const userDiv = document.createElement('div');
-                    userDiv.className = `p-4 hover:bg-slate-700/50 cursor-pointer transition-all border-b border-slate-700/50 ${selectedUser === userData.username ? 'bg-slate-700/50 border-l-4 border-l-blue-500' : ''}`;
-                    userDiv.onclick = () => selectUser(userData.username);
-
-                    const time = userData.timestamp ? new Date(userData.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    userDiv.innerHTML = `
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                                ${userData.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-start">
-                                    <h3 class="font-medium text-slate-200 truncate">${userData.username}</h3>
-                                    <span class="text-xs text-slate-500">${time}</span>
-                                </div>
-                                <p class="text-sm text-slate-400 truncate">${escapeHtml(decrypted)}</p>
-                            </div>
-                        </div>`;
-                    userList.appendChild(userDiv);
-                });
-            }, (error) => {
-                console.error("Admin error:", error);
-                showToast('Admin error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        async function selectUser(username) {
-            selectedUser = username;
-            currentChatHeader.textContent = username;
-            document.getElementById('chatUserAvatar').textContent = username.charAt(0).toUpperCase();
-            adminChatArea.classList.remove('hidden');
-            document.getElementById('emptyState').classList.add('hidden');
-            loadAdminChat(username);
-        }
-
-        async function loadAdminChat(username) {
-            unsubscribers.forEach(unsub => unsub());
-            unsubscribers = [];
-
-            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
-            const q = query(
-                collection(db, 'messages'),
-                where('participants', 'array-contains', username)
-            );
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                adminMessages.innerHTML = '';
-
-                // Client-side sorting
-                const docs = snapshot.docs.sort((a, b) => {
-                    const ta = a.data().timestamp?.toMillis() || 0;
-                    const tb = b.data().timestamp?.toMillis() || 0;
-                    return ta - tb;
-                });
-
-                for (const docSnap of docs) {
-                    const data = docSnap.data();
-                    const decryptedText = await decryptMessage(data.encryptedText);
-                    const isAdminMsg = data.sender === 'admin';
-                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isAdminMsg ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
-                    msgDiv.innerHTML = `
-                        <div class="max-w-[80%] ${isAdminMsg ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
-                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
-                            <div class="flex items-center justify-end gap-1 mt-1">
-                                <span class="text-xs opacity-60">${time}</span>
-                                ${isAdminMsg ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
-                            </div>
-                        </div>`;
-                    adminMessages.appendChild(msgDiv);
-                }
-                adminMessages.scrollTop = adminMessages.scrollHeight;
-            }, (error) => {
-                console.error("Chat error:", error);
-                showToast('Chat error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        adminSendBtn.addEventListener('click', sendAdminReply);
-        adminMessageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAdminReply(); });
-
-        async function sendAdminReply() {
-            if (!selectedUser) { showToast('একটি user select করুন!', 'error'); return; }
-            const text = adminMessageInput.value.trim();
-            if (!text) return;
-            const encrypted = await encryptMessage(text);
-            try {
-                await addDoc(collection(db, 'messages'), {
-                    sender: 'admin',
-                    receiver: selectedUser,
-                    participants: [selectedUser, 'admin'],
-                    encryptedText: encrypted,
-                    timestamp: serverTimestamp(),
-                    read: false
-                });
-                adminMessageInput.value = '';
-                showToast('Reply sent!', 'success');
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Error: ' + error.message, 'error');
-            }
-        }
-
-        logoutBtn.addEventListener('click', () => location.reload());
-        adminLogoutBtn.addEventListener('click', () => location.reload());
+        });
 
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'Hind Siliguri', sans-serif; }
-        body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-            min-height: 100vh;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Hind+Siliguri:wght@400;500;600;700&display=swap');
+        * { font-family: 'Inter', 'Hind Siliguri', sans-serif; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background: #0f172a;
+            margin: 0;
+            padding: 0;
+            overscroll-behavior: none;
         }
-        .glass-panel {
+
+        .login-screen {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            padding-top: max(16px, env(safe-area-inset-top));
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            background: radial-gradient(ellipse at 20% 20%, rgba(16, 185, 129, 0.12) 0%, transparent 50%),
+                        radial-gradient(ellipse at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                        #0f172a;
+        }
+
+        .glass-card {
             background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border-radius: 24px;
+            padding: 32px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        @media (max-width: 480px) {
+            .glass-card { padding: 24px; border-radius: 20px; }
+        }
+
+        .app-root {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0f172a;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .chat-header {
+            flex-shrink: 0;
+            background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 10px 12px;
+            padding-top: max(10px, env(safe-area-inset-top));
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+            min-height: 56px;
+            position: relative;
         }
-        .message-bubble {
-            animation: messagePop 0.3s ease-out;
+
+        @media (min-width: 768px) {
+            .chat-header { padding: 12px 20px; padding-top: max(12px, env(safe-area-inset-top)); min-height: 64px; }
         }
-        @keyframes messagePop {
-            0% { transform: scale(0.8); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
+
+        .messages-scroll {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            padding: 8px 0;
+            background: #0f172a;
+            min-height: 0;
+            position: relative;
+            scroll-behavior: smooth;
         }
-        .animate-fade-in {
-            animation: fadeIn 0.3s ease-out;
+
+        @media (min-width: 768px) {
+            .messages-scroll {
+                background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+                padding: 12px 0;
+            }
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
+
+        .input-bar {
+            flex-shrink: 0;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255,255,255,0.04);
+            padding: 8px 12px;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            z-index: 10;
+            position: relative;
+        }
+
+        @media (min-width: 768px) {
+            .input-bar { padding: 12px 20px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+        }
+
+        .msg-input {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 24px;
+            padding: 10px 16px;
+            font-size: 16px;
+            color: #e2e8f0;
+            outline: none;
+            flex: 1;
+            min-height: 44px;
+            max-height: 120px;
+            -webkit-appearance: none;
+        }
+
+        .msg-input:focus { border-color: rgba(16, 185, 129, 0.4); }
+        .msg-input::placeholder { color: #64748b; }
+
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: white;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+            transition: transform 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .send-btn:active { transform: scale(0.92); }
+
+        .bubble-sent {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: white;
+            border-radius: 18px 18px 4px 18px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+
+        .bubble-received {
+            background: #334155;
+            color: #f1f5f9;
+            border-radius: 18px 18px 18px 4px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        .date-pill {
+            background: rgba(30, 41, 59, 0.8);
+            color: #94a3b8;
+            font-size: 11px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .admin-layout {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .sidebar {
+            width: 100%;
+            height: 100%;
+            background: #0f172a;
+            border-right: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        @media (min-width: 768px) {
+            .sidebar { width: 360px; }
+        }
+
+        .sidebar-header {
+            flex-shrink: 0;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 12px 16px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            z-index: 10;
+        }
+
+        @media (min-width: 768px) {
+            .sidebar-header { padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top)); }
+        }
+
+        .search-box {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .search-box input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e2e8f0;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .search-box input::placeholder { color: #64748b; }
+
+        .user-list {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            min-height: 0;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .user-item:active { background: rgba(51, 65, 85, 0.6); }
+
+        @media (min-width: 768px) {
+            .user-item { padding: 14px 20px; }
+            .user-item:hover { background: rgba(51, 65, 85, 0.4); }
+        }
+
+        .user-item.active {
+            background: rgba(51, 65, 85, 0.5);
+            border-left: 3px solid #10b981;
+        }
+
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #10b981 0%, #0d9488 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+        }
+
+        @media (min-width: 768px) {
+            .avatar { width: 52px; height: 52px; font-size: 20px; }
+        }
+
+        .admin-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+            background: #0f172a;
+        }
+
+        @media (min-width: 768px) {
+            .admin-chat { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); }
+        }
+
+        .mobile-hidden { display: none !important; }
+        .mobile-show { display: flex !important; }
+
+        @media (min-width: 768px) {
+            .mobile-hidden { display: flex !important; }
+        }
+
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(6px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-msg-in { animation: msgIn 0.2s ease-out; }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
+        .animate-fade-up { animation: fadeUp 0.4s ease-out; }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+            animation: pulse-dot 2s infinite;
         }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
+
+        .empty-state-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(30, 41, 59, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            border: 2px solid rgba(255,255,255,0.04);
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
+
+        @media (min-width: 768px) {
+            .empty-state-icon { width: 72px; height: 72px; }
         }
-        .input-glow:focus {
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-        }
+
+        .no-select { user-select: none; -webkit-user-select: none; }
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="text-slate-200">
+<body>
 
-    <!-- LOGIN SCREEN -->
-    <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
-        <div class="glass-panel rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <div class="text-center mb-8">
-                <div class="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                    <i class="fas fa-user-secret text-3xl text-white"></i>
+    <!-- ========== LOGIN SCREEN ========== -->
+    <div id="loginScreen" class="login-screen">
+        <div class="glass-card animate-fade-up">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 md:w-20 md:h-20 mx-auto bg-gradient-to-br from-emerald-500 via-teal-500 to-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20">
+                    <i class="fas fa-user-secret text-2xl md:text-3xl text-white"></i>
                 </div>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                    Anonymous Chat
-                </h1>
-                <p class="text-slate-400 mt-2 text-sm">End-to-End Encrypted Messaging</p>
+                <h1 class="text-2xl md:text-3xl font-bold text-white tracking-tight">Anonymous Chat</h1>
+                <p class="text-slate-400 mt-1 text-sm">End-to-End Encrypted</p>
             </div>
 
-            <div class="space-y-4">
+            <div class="space-y-3">
                 <div>
-                    <label class="block text-sm font-medium text-slate-400 mb-2">Username দিন</label>
+                    <label class="block text-sm font-medium text-slate-400 mb-1.5">Username</label>
                     <div class="relative">
-                        <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
                         <input 
                             id="usernameInput" 
                             type="text" 
                             placeholder="যেমন: rahat, user123, admin"
-                            class="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
-                        let currentUser = null;
-        let isAdmin = false;
-        let selectedUser = null;
-        let unsubscribers = [];
-
-        const loginScreen = document.getElementById('loginScreen');
-        const chatScreen = document.getElementById('chatScreen');
-        const adminScreen = document.getElementById('adminScreen');
-        const usernameInput = document.getElementById('usernameInput');
-        const loginBtn = document.getElementById('loginBtn');
-        const messageInput = document.getElementById('messageInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const messagesContainer = document.getElementById('messagesContainer');
-        const userList = document.getElementById('userList');
-        const adminChatArea = document.getElementById('adminChatArea');
-        const adminMessages = document.getElementById('adminMessages');
-        const adminMessageInput = document.getElementById('adminMessageInput');
-        const adminSendBtn = document.getElementById('adminSendBtn');
-        const currentChatHeader = document.getElementById('currentChatHeader');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const adminLogoutBtn = document.getElementById('adminLogoutBtn');
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
-            toast.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-xl z-50 animate-fade-in`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-
-        loginBtn.addEventListener('click', handleLogin);
-        usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
-
-        function handleLogin() {
-            const username = usernameInput.value.trim().toLowerCase();
-            if (!username) { showToast('Username দিন!', 'error'); return; }
-            currentUser = username;
-            isAdmin = username === 'admin';
-            if (isAdmin) showAdminScreen(); else showChatScreen();
-        }
-
-        function showChatScreen() {
-            loginScreen.classList.add('hidden');
-            chatScreen.classList.remove('hidden');
-            document.getElementById('chatUsername').textContent = currentUser;
-            loadUserMessages();
-        }
-
-        function showAdminScreen() {
-            loginScreen.classList.add('hidden');
-            adminScreen.classList.remove('hidden');
-            loadAdminUserList();
-        }
-
-        // ==========================================
-        // USER CHAT - NO orderBy (Index not needed!)
-        // ==========================================
-        async function loadUserMessages() {
-            unsubscribers.forEach(unsub => unsub());
-            unsubscribers = [];
-
-            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
-            const q = query(
-                collection(db, 'messages'),
-                where('participants', 'array-contains', currentUser)
-            );
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                messagesContainer.innerHTML = '';
-
-                if (snapshot.empty) {
-                    messagesContainer.innerHTML = `
-                        <div class="flex flex-col items-center justify-center h-full text-slate-400">
-                            <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
-                            <p>Admin কে message পাঠান!</p>
-                            <p class="text-sm opacity-60">আপনার সব message encrypted থাকবে</p>
-                        </div>`;
-                    return;
-                }
-
-                // Client-side sorting by timestamp
-                const docs = snapshot.docs.sort((a, b) => {
-                    const ta = a.data().timestamp?.toMillis() || 0;
-                    const tb = b.data().timestamp?.toMillis() || 0;
-                    return ta - tb;
-                });
-
-                for (const docSnap of docs) {
-                    const data = docSnap.data();
-                    const decryptedText = await decryptMessage(data.encryptedText);
-                    const isSentByMe = data.sender === currentUser;
-                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isSentByMe ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
-                    msgDiv.innerHTML = `
-                        <div class="max-w-[80%] ${isSentByMe ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
-                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
-                            <div class="flex items-center justify-end gap-1 mt-1">
-                                <span class="text-xs opacity-60">${time}</span>
-                                ${isSentByMe ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
-                            </div>
-                        </div>`;
-                    messagesContainer.appendChild(msgDiv);
-                }
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }, (error) => {
-                console.error("Error:", error);
-                showToast('Error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        sendBtn.addEventListener('click', sendUserMessage);
-        messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendUserMessage(); });
-
-        async function sendUserMessage() {
-            const text = messageInput.value.trim();
-            if (!text) return;
-            const encrypted = await encryptMessage(text);
-            try {
-                await addDoc(collection(db, 'messages'), {
-                    sender: currentUser,
-                    receiver: 'admin',
-                    participants: [currentUser, 'admin'],
-                    encryptedText: encrypted,
-                    timestamp: serverTimestamp(),
-                    read: false
-                });
-                messageInput.value = '';
-                showToast('Message sent!', 'success');
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Error: ' + error.message, 'error');
-            }
-        }
-
-        // ==========================================
-        // ADMIN PANEL - NO orderBy (Index not needed!)
-        // ==========================================
-        async function loadAdminUserList() {
-            const q = query(collection(db, 'messages'));
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                const users = new Map();
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const otherUser = data.sender === 'admin' ? data.receiver : data.sender;
-                    if (otherUser !== 'admin' && !users.has(otherUser)) {
-                        users.set(otherUser, {
-                            username: otherUser,
-                            lastMessage: data.encryptedText,
-                            timestamp: data.timestamp
-                        });
-                    }
-                });
-
-                userList.innerHTML = '';
-
-                if (users.size === 0) {
-                    userList.innerHTML = `
-                        <div class="p-8 text-center text-slate-400">
-                            <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
-                            <p class="text-sm">কোনো message নেই</p>
-                        </div>`;
-                    return;
-                }
-
-                users.forEach(async (userData) => {
-                    const decrypted = await decryptMessage(userData.lastMessage);
-                    const userDiv = document.createElement('div');
-                    userDiv.className = `p-4 hover:bg-slate-700/50 cursor-pointer transition-all border-b border-slate-700/50 ${selectedUser === userData.username ? 'bg-slate-700/50 border-l-4 border-l-blue-500' : ''}`;
-                    userDiv.onclick = () => selectUser(userData.username);
-
-                    const time = userData.timestamp ? new Date(userData.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    userDiv.innerHTML = `
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                                ${userData.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-start">
-                                    <h3 class="font-medium text-slate-200 truncate">${userData.username}</h3>
-                                    <span class="text-xs text-slate-500">${time}</span>
-                                </div>
-                                <p class="text-sm text-slate-400 truncate">${escapeHtml(decrypted)}</p>
-                            </div>
-                        </div>`;
-                    userList.appendChild(userDiv);
-                });
-            }, (error) => {
-                console.error("Admin error:", error);
-                showToast('Admin error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        async function selectUser(username) {
-            selectedUser = username;
-            currentChatHeader.textContent = username;
-            document.getElementById('chatUserAvatar').textContent = username.charAt(0).toUpperCase();
-            adminChatArea.classList.remove('hidden');
-            document.getElementById('emptyState').classList.add('hidden');
-            loadAdminChat(username);
-        }
-
-        async function loadAdminChat(username) {
-            unsubscribers.forEach(unsub => unsub());
-            unsubscribers = [];
-
-            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
-            const q = query(
-                collection(db, 'messages'),
-                where('participants', 'array-contains', username)
-            );
-
-            const unsub = onSnapshot(q, async (snapshot) => {
-                adminMessages.innerHTML = '';
-
-                // Client-side sorting
-                const docs = snapshot.docs.sort((a, b) => {
-                    const ta = a.data().timestamp?.toMillis() || 0;
-                    const tb = b.data().timestamp?.toMillis() || 0;
-                    return ta - tb;
-                });
-
-                for (const docSnap of docs) {
-                    const data = docSnap.data();
-                    const decryptedText = await decryptMessage(data.encryptedText);
-                    const isAdminMsg = data.sender === 'admin';
-                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
-
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isAdminMsg ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
-                    msgDiv.innerHTML = `
-                        <div class="max-w-[80%] ${isAdminMsg ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
-                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
-                            <div class="flex items-center justify-end gap-1 mt-1">
-                                <span class="text-xs opacity-60">${time}</span>
-                                ${isAdminMsg ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
-                            </div>
-                        </div>`;
-                    adminMessages.appendChild(msgDiv);
-                }
-                adminMessages.scrollTop = adminMessages.scrollHeight;
-            }, (error) => {
-                console.error("Chat error:", error);
-                showToast('Chat error: ' + error.message, 'error');
-            });
-
-            unsubscribers.push(unsub);
-        }
-
-        adminSendBtn.addEventListener('click', sendAdminReply);
-        adminMessageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAdminReply(); });
-
-        async function sendAdminReply() {
-            if (!selectedUser) { showToast('একটি user select করুন!', 'error'); return; }
-            const text = adminMessageInput.value.trim();
-            if (!text) return;
-            const encrypted = await encryptMessage(text);
-            try {
-                await addDoc(collection(db, 'messages'), {
-                    sender: 'admin',
-                    receiver: selectedUser,
-                    participants: [selectedUser, 'admin'],
-                    encryptedText: encrypted,
-                    timestamp: serverTimestamp(),
-                    read: false
-                });
-                adminMessageInput.value = '';
-                showToast('Reply sent!', 'success');
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Error: ' + error.message, 'error');
-            }
-        }
-
-        logoutBtn.addEventListener('click', () => location.reload());
-        adminLogoutBtn.addEventListener('click', () => location.reload());
-
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'Hind Siliguri', sans-serif; }
-        body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-            min-height: 100vh;
-        }
-        .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .message-bubble {
-            animation: messagePop 0.3s ease-out;
-        }
-        @keyframes messagePop {
-            0% { transform: scale(0.8); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.3s ease-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        .input-glow:focus {
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-        }
-    </style>
-</head>
-<body class="text-slate-200">
-
-    <!-- LOGIN SCREEN -->
-    <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
-        <div class="glass-panel rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <div class="text-center mb-8">
-                <div class="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                    <i class="fas fa-user-secret text-3xl text-white"></i>
-                </div>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                    Anonymous Chat
-                </h1>
-                <p class="text-slate-400 mt-2 text-sm">End-to-End Encrypted Messaging</p>
-            </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-400 mb-2">Username দিন</label>
-                    <div class="relative">
-                        <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
-                        <input 
-                            id="usernameInput" 
-                            type="text" 
-                            placeholder="যেমন: rahat, user123, admin"
-                            class="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
+                            class="w-full bg-slate-800/60 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all text-base"
+                            autocomplete="off"
+                            autocapitalize="off"
                         >
                     </div>
                 </div>
 
                 <button 
                     id="loginBtn" 
-                    class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold py-3 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-blue-500/25"
+                    class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-3 rounded-xl transition-all transform active:scale-[0.98] shadow-lg shadow-emerald-500/20 text-base"
                 >
-                    <i class="fas fa-sign-in-alt mr-2"></i>
-                    Login করুন
+                    <i class="fas fa-sign-in-alt mr-2"></i>Login করুন
                 </button>
             </div>
 
-            <div class="mt-6 text-center">
+            <div class="mt-5 text-center space-y-1.5">
                 <p class="text-xs text-slate-500">
-                    <i class="fas fa-shield-alt mr-1"></i>
-                    Admin username: <span class="text-blue-400 font-mono">admin</span>
+                    <i class="fas fa-shield-alt mr-1 text-emerald-500"></i>
+                    Admin: <span class="text-emerald-400 font-mono font-semibold">admin</span>
                 </p>
+                <p class="text-[11px] text-slate-600">Personal use • Fully Encrypted</p>
             </div>
         </div>
     </div>
 
-    <!-- USER CHAT SCREEN -->
-    <div id="chatScreen" class="hidden min-h-screen flex flex-col">
-        <div class="glass-panel border-b border-slate-700/50 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+    <!-- ========== USER CHAT SCREEN ========== -->
+    <div id="userScreen" class="hidden app-root">
+        <div class="chat-header no-select">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                    <i class="fas fa-user text-white text-sm"></i>
+                <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                    <i class="fas fa-headset text-white text-xs md:text-sm"></i>
                 </div>
                 <div>
-                    <h2 class="font-semibold text-white" id="chatUsername">User</h2>
-                    <p class="text-xs text-green-400 flex items-center gap-1">
-                        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <h2 class="font-semibold text-white text-[15px] md:text-base">Admin</h2>
+                    <p class="text-xs text-emerald-400 flex items-center gap-1.5">
+                        <span class="status-dot"></span>
                         Online
                     </p>
                 </div>
             </div>
             <div class="flex items-center gap-3">
-                <span class="text-xs bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30">
-                    <i class="fas fa-lock mr-1"></i>Encrypted
+                <span class="hidden md:inline-flex text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium items-center">
+                    <i class="fas fa-lock text-[10px] mr-1.5"></i>Encrypted
                 </span>
-                <button id="logoutBtn" class="text-slate-400 hover:text-white transition-colors">
+                <button id="userLogout" class="text-slate-400 hover:text-red-400 transition-colors p-2 -mr-2">
                     <i class="fas fa-sign-out-alt text-lg"></i>
                 </button>
             </div>
         </div>
 
-        <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+        <div id="userMessages" class="messages-scroll custom-scroll">
         </div>
 
-        <div class="glass-panel border-t border-slate-700/50 p-4">
-            <div class="flex gap-3 max-w-4xl mx-auto">
+        <div class="input-bar">
+            <div class="flex gap-2.5 max-w-5xl mx-auto items-end">
                 <input 
-                    id="messageInput" 
+                    id="userMsgInput" 
                     type="text" 
                     placeholder="Message লিখুন..."
-                    class="flex-1 bg-slate-800/50 border border-slate-700 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
+                    class="msg-input"
+                    autocomplete="off"
+                    autocapitalize="off"
                 >
                 <button 
-                    id="sendBtn" 
-                    class="bg-blue-600 hover:bg-blue-500 text-white px-6 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/25"
+                    id="userSendBtn" 
+                    class="send-btn"
                 >
-                    <i class="fas fa-paper-plane"></i>
+                    <i class="fas fa-paper-plane text-sm"></i>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ADMIN SCREEN -->
-    <div id="adminScreen" class="hidden min-h-screen flex">
-        <div class="w-80 glass-panel border-r border-slate-700/50 flex flex-col">
-            <div class="p-4 border-b border-slate-700/50">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-                        <i class="fas fa-crown text-white text-sm"></i>
+    <!-- ========== ADMIN SCREEN ========== -->
+    <div id="adminScreen" class="hidden admin-layout">
+        <div id="adminSidebar" class="sidebar">
+            <div class="sidebar-header no-select">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
+                            <i class="fas fa-crown text-white text-xs md:text-sm"></i>
+                        </div>
+                        <div>
+                            <h2 class="font-semibold text-white text-[15px]">Admin Panel</h2>
+                            <p class="text-xs text-slate-400">All conversations</p>
+                        </div>
                     </div>
-                    <div>
-                        <h2 class="font-semibold text-white">Admin Panel</h2>
-                        <p class="text-xs text-slate-400">All conversations</p>
-                    </div>
+                    <button id="adminLogout" class="text-slate-400 hover:text-red-400 transition-colors p-2">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+                <div class="search-box">
+                    <i class="fas fa-search text-slate-500 text-sm"></i>
+                    <input type="text" placeholder="Search users...">
                 </div>
             </div>
 
-            <div id="userList" class="flex-1 overflow-y-auto custom-scrollbar">
-            </div>
-
-            <div class="p-4 border-t border-slate-700/50">
-                <button id="adminLogoutBtn" class="w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Logout
-                </button>
+            <div id="adminUserList" class="user-list custom-scroll">
             </div>
         </div>
 
-        <div class="flex-1 flex flex-col">
-            <div id="adminChatArea" class="hidden flex flex-col h-full">
-                <div class="glass-panel border-b border-slate-700/50 px-6 py-4 flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold" id="chatUserAvatar">
-                            U
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-white" id="currentChatHeader">Select a user</h3>
-                            <p class="text-xs text-slate-400">Anonymous User</p>
-                        </div>
+        <div class="admin-chat">
+            <div id="adminEmptyState" class="flex-1 flex items-center justify-center">
+                <div class="text-center text-slate-500 select-none px-4">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-comments text-3xl text-slate-600"></i>
                     </div>
-                </div>
-
-                <div id="adminMessages" class="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                </div>
-
-                <div class="glass-panel border-t border-slate-700/50 p-4">
-                    <div class="flex gap-3 max-w-4xl mx-auto">
-                        <input 
-                            id="adminMessageInput" 
-                            type="text" 
-                            placeholder="Reply লিখুন..."
-                            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
-                        >
-                        <button 
-                            id="adminSendBtn" 
-                            class="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white px-6 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg"
-                        >
-                            <i class="fas fa-reply mr-2"></i>
-                            Reply
-                        </button>
-                    </div>
+                    <p class="text-lg font-medium text-slate-300 mb-1">Anonymous Messenger</p>
+                    <p class="text-sm text-slate-500">Left sidebar থেকে user select করুন</p>
                 </div>
             </div>
 
-            <div id="emptyState" class="flex-1 flex items-center justify-center">
-                <div class="text-center text-slate-500">
-                    <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
-                    <p class="text-lg">Left sidebar থেকে একটি user select করুন</p>
-                    <p class="text-sm opacity-60">সব messages end-to-end encrypted</p>
+            <div id="adminChatArea" class="hidden app-root">
+                <div class="chat-header no-select">
+                    <div class="flex items-center gap-2.5 md:gap-3">
+                        <button id="mobileBackBtn" class="md:hidden text-slate-400 hover:text-white p-1 -ml-1">
+                            <i class="fas fa-arrow-left text-lg"></i>
+                        </button>
+                        <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-sm md:text-base" id="adminChatHeaderAvatar">
+                            U
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-white text-[15px] md:text-base" id="adminChatHeader">User</h3>
+                            <p class="text-xs text-slate-400">Anonymous</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="hidden md:inline-flex text-xs bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full border border-emerald-500/20 items-center">
+                            <i class="fas fa-circle text-[8px] mr-1.5"></i>Active
+                        </span>
+                    </div>
+                </div>
+
+                <div id="adminMessages" class="messages-scroll custom-scroll">
+                </div>
+
+                <div class="input-bar">
+                    <div class="flex gap-2.5 max-w-5xl mx-auto items-end">
+                        <input 
+                            id="adminMsgInput" 
+                            type="text" 
+                            placeholder="Reply লিখুন..."
+                            class="msg-input"
+                            autocomplete="off"
+                            autocapitalize="off"
+                        >
+                        <button 
+                            id="adminSendBtn" 
+                            class="send-btn"
+                        >
+                            <i class="fas fa-reply text-sm"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
