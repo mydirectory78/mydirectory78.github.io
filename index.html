@@ -7,12 +7,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script type="module">
-        // ==========================================
-        // FIREBASE CONFIG - এখানে আপনার Firebase Config বসান
-        // ==========================================
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp, updateDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // ⚠️⚠️⚠️ এখানে আপনার REAL Firebase Config বসান ⚠️⚠️⚠️
         // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyAfnDGzS2QJyWDNPQl2LuO--GOxPAf7uxQ",
@@ -28,10 +26,7 @@ const firebaseConfig = {
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // ==========================================
-        // ENCRYPTION UTILS (AES-GCM)
-        // ==========================================
-        const ENCRYPTION_KEY = "BangladeshAnonymous2024!Secure#Chat$Key"; // এটি পরিবর্তন করুন!
+        const ENCRYPTION_KEY = "your-secret-key-change-this-2024";
 
         async function getKey() {
             const encoder = new TextEncoder();
@@ -62,21 +57,15 @@ const firebaseConfig = {
                 const decoder = new TextDecoder();
                 return decoder.decode(decrypted);
             } catch (e) {
-                return "[Encrypted Message]";
+                return "[Encrypted]";
             }
         }
 
-        // ==========================================
-        // STATE MANAGEMENT
-        // ==========================================
         let currentUser = null;
         let isAdmin = false;
         let selectedUser = null;
         let unsubscribers = [];
 
-        // ==========================================
-        // DOM ELEMENTS
-        // ==========================================
         const loginScreen = document.getElementById('loginScreen');
         const chatScreen = document.getElementById('chatScreen');
         const adminScreen = document.getElementById('adminScreen');
@@ -93,31 +82,31 @@ const firebaseConfig = {
         const currentChatHeader = document.getElementById('currentChatHeader');
         const logoutBtn = document.getElementById('logoutBtn');
         const adminLogoutBtn = document.getElementById('adminLogoutBtn');
-        const typingIndicator = document.getElementById('typingIndicator');
 
-        // ==========================================
-        // LOGIN SYSTEM
-        // ==========================================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+            toast.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-xl z-50 animate-fade-in`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
         loginBtn.addEventListener('click', handleLogin);
-        usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleLogin();
-        });
+        usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
 
         function handleLogin() {
             const username = usernameInput.value.trim().toLowerCase();
-            if (!username) {
-                showToast('Username দিন!', 'error');
-                return;
-            }
-
+            if (!username) { showToast('Username দিন!', 'error'); return; }
             currentUser = username;
-            isAdmin = username === 'পাগলাদাশু';
-
-            if (isAdmin) {
-                showAdminScreen();
-            } else {
-                showChatScreen();
-            }
+            isAdmin = username === 'admin';
+            if (isAdmin) showAdminScreen(); else showChatScreen();
         }
 
         function showChatScreen() {
@@ -134,17 +123,16 @@ const firebaseConfig = {
         }
 
         // ==========================================
-        // USER CHAT (Normal User)
+        // USER CHAT - NO orderBy (Index not needed!)
         // ==========================================
         async function loadUserMessages() {
-            // Clear previous subscriptions
             unsubscribers.forEach(unsub => unsub());
             unsubscribers = [];
 
+            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
             const q = query(
                 collection(db, 'messages'),
-                where('participants', 'array-contains', currentUser),
-                orderBy('timestamp', 'asc')
+                where('participants', 'array-contains', currentUser)
             );
 
             const unsub = onSnapshot(q, async (snapshot) => {
@@ -156,19 +144,25 @@ const firebaseConfig = {
                             <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
                             <p>Admin কে message পাঠান!</p>
                             <p class="text-sm opacity-60">আপনার সব message encrypted থাকবে</p>
-                        </div>
-                    `;
+                        </div>`;
                     return;
                 }
 
-                for (const docSnap of snapshot.docs) {
+                // Client-side sorting by timestamp
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis() || 0;
+                    const tb = b.data().timestamp?.toMillis() || 0;
+                    return ta - tb;
+                });
+
+                for (const docSnap of docs) {
                     const data = docSnap.data();
                     const decryptedText = await decryptMessage(data.encryptedText);
                     const isSentByMe = data.sender === currentUser;
                     const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
 
                     const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isSentByMe ? 'justify-end' : 'justify-start'} mb-4`;
+                    msgDiv.className = `flex ${isSentByMe ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
                     msgDiv.innerHTML = `
                         <div class="max-w-[80%] ${isSentByMe ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
                             <p class="text-sm">${escapeHtml(decryptedText)}</p>
@@ -176,29 +170,25 @@ const firebaseConfig = {
                                 <span class="text-xs opacity-60">${time}</span>
                                 ${isSentByMe ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                     messagesContainer.appendChild(msgDiv);
                 }
-
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, (error) => {
+                console.error("Error:", error);
+                showToast('Error: ' + error.message, 'error');
             });
 
             unsubscribers.push(unsub);
         }
 
-        // Send message (User to Admin)
         sendBtn.addEventListener('click', sendUserMessage);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendUserMessage();
-        });
+        messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendUserMessage(); });
 
         async function sendUserMessage() {
             const text = messageInput.value.trim();
             if (!text) return;
-
             const encrypted = await encryptMessage(text);
-
             try {
                 await addDoc(collection(db, 'messages'), {
                     sender: currentUser,
@@ -208,20 +198,19 @@ const firebaseConfig = {
                     timestamp: serverTimestamp(),
                     read: false
                 });
-
                 messageInput.value = '';
                 showToast('Message sent!', 'success');
             } catch (error) {
                 console.error('Error:', error);
-                showToast('Error sending message!', 'error');
+                showToast('Error: ' + error.message, 'error');
             }
         }
 
         // ==========================================
-        // ADMIN PANEL
+        // ADMIN PANEL - NO orderBy (Index not needed!)
         // ==========================================
         async function loadAdminUserList() {
-            const q = query(collection(db, 'messages'), orderBy('timestamp', 'desc'));
+            const q = query(collection(db, 'messages'));
 
             const unsub = onSnapshot(q, async (snapshot) => {
                 const users = new Map();
@@ -245,8 +234,7 @@ const firebaseConfig = {
                         <div class="p-8 text-center text-slate-400">
                             <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
                             <p class="text-sm">কোনো message নেই</p>
-                        </div>
-                    `;
+                        </div>`;
                     return;
                 }
 
@@ -270,10 +258,12 @@ const firebaseConfig = {
                                 </div>
                                 <p class="text-sm text-slate-400 truncate">${escapeHtml(decrypted)}</p>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                     userList.appendChild(userDiv);
                 });
+            }, (error) => {
+                console.error("Admin error:", error);
+                showToast('Admin error: ' + error.message, 'error');
             });
 
             unsubscribers.push(unsub);
@@ -282,75 +272,67 @@ const firebaseConfig = {
         async function selectUser(username) {
             selectedUser = username;
             currentChatHeader.textContent = username;
+            document.getElementById('chatUserAvatar').textContent = username.charAt(0).toUpperCase();
             adminChatArea.classList.remove('hidden');
-
-            // Update UI selection
-            document.querySelectorAll('#userList > div').forEach(div => {
-                div.classList.remove('bg-slate-700/50', 'border-l-4', 'border-l-blue-500');
-            });
-            event.currentTarget.classList.add('bg-slate-700/50', 'border-l-4', 'border-l-blue-500');
-
-            // Load messages for this user
+            document.getElementById('emptyState').classList.add('hidden');
             loadAdminChat(username);
         }
 
         async function loadAdminChat(username) {
-            // Clear previous
             unsubscribers.forEach(unsub => unsub());
             unsubscribers = [];
 
+            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
             const q = query(
                 collection(db, 'messages'),
-                where('participants', 'array-contains', username),
-                orderBy('timestamp', 'asc')
+                where('participants', 'array-contains', username)
             );
 
             const unsub = onSnapshot(q, async (snapshot) => {
                 adminMessages.innerHTML = '';
 
-                for (const docSnap of snapshot.docs) {
+                // Client-side sorting
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis() || 0;
+                    const tb = b.data().timestamp?.toMillis() || 0;
+                    return ta - tb;
+                });
+
+                for (const docSnap of docs) {
                     const data = docSnap.data();
                     const decryptedText = await decryptMessage(data.encryptedText);
-                    const isAdmin = data.sender === 'admin';
+                    const isAdminMsg = data.sender === 'admin';
                     const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
 
                     const msgDiv = document.createElement('div');
-                    msgDiv.className = `flex ${isAdmin ? 'justify-end' : 'justify-start'} mb-4`;
+                    msgDiv.className = `flex ${isAdminMsg ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
                     msgDiv.innerHTML = `
-                        <div class="max-w-[80%] ${isAdmin ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
+                        <div class="max-w-[80%] ${isAdminMsg ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
                             <p class="text-sm">${escapeHtml(decryptedText)}</p>
                             <div class="flex items-center justify-end gap-1 mt-1">
                                 <span class="text-xs opacity-60">${time}</span>
-                                ${isAdmin ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
+                                ${isAdminMsg ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                     adminMessages.appendChild(msgDiv);
                 }
-
                 adminMessages.scrollTop = adminMessages.scrollHeight;
+            }, (error) => {
+                console.error("Chat error:", error);
+                showToast('Chat error: ' + error.message, 'error');
             });
 
             unsubscribers.push(unsub);
         }
 
-        // Admin send reply
         adminSendBtn.addEventListener('click', sendAdminReply);
-        adminMessageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendAdminReply();
-        });
+        adminMessageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAdminReply(); });
 
         async function sendAdminReply() {
-            if (!selectedUser) {
-                showToast('একটি user select করুন!', 'error');
-                return;
-            }
-
+            if (!selectedUser) { showToast('একটি user select করুন!', 'error'); return; }
             const text = adminMessageInput.value.trim();
             if (!text) return;
-
             const encrypted = await encryptMessage(text);
-
             try {
                 await addDoc(collection(db, 'messages'), {
                     sender: 'admin',
@@ -360,98 +342,57 @@ const firebaseConfig = {
                     timestamp: serverTimestamp(),
                     read: false
                 });
-
                 adminMessageInput.value = '';
                 showToast('Reply sent!', 'success');
             } catch (error) {
                 console.error('Error:', error);
-                showToast('Error sending reply!', 'error');
+                showToast('Error: ' + error.message, 'error');
             }
         }
 
-        // ==========================================
-        // UTILS
-        // ==========================================
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
-            toast.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-xl z-50 animate-fade-in`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        }
-
-        // Logout
         logoutBtn.addEventListener('click', () => location.reload());
         adminLogoutBtn.addEventListener('click', () => location.reload());
-
-        // Typing indicator
-        let typingTimeout;
-        messageInput.addEventListener('input', () => {
-            // Could add typing status to Firebase here
-        });
 
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
-
         * { font-family: 'Hind Siliguri', sans-serif; }
-
         body {
             background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
             min-height: 100vh;
         }
-
         .glass-panel {
             background: rgba(30, 41, 59, 0.7);
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-
         .message-bubble {
             animation: messagePop 0.3s ease-out;
         }
-
         @keyframes messagePop {
             0% { transform: scale(0.8); opacity: 0; }
             100% { transform: scale(1); opacity: 1; }
         }
-
         .animate-fade-in {
             animation: fadeIn 0.3s ease-out;
         }
-
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-track {
             background: transparent;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 10px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.3);
         }
-
         .input-glow:focus {
             box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
         }
@@ -506,7 +447,6 @@ const firebaseConfig = {
 
     <!-- USER CHAT SCREEN -->
     <div id="chatScreen" class="hidden min-h-screen flex flex-col">
-        <!-- Header -->
         <div class="glass-panel border-b border-slate-700/50 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
@@ -530,12 +470,9 @@ const firebaseConfig = {
             </div>
         </div>
 
-        <!-- Messages Area -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
-            <!-- Messages will be loaded here -->
         </div>
 
-        <!-- Input Area -->
         <div class="glass-panel border-t border-slate-700/50 p-4">
             <div class="flex gap-3 max-w-4xl mx-auto">
                 <input 
@@ -556,7 +493,6 @@ const firebaseConfig = {
 
     <!-- ADMIN SCREEN -->
     <div id="adminScreen" class="hidden min-h-screen flex">
-        <!-- Sidebar -->
         <div class="w-80 glass-panel border-r border-slate-700/50 flex flex-col">
             <div class="p-4 border-b border-slate-700/50">
                 <div class="flex items-center gap-3">
@@ -571,7 +507,6 @@ const firebaseConfig = {
             </div>
 
             <div id="userList" class="flex-1 overflow-y-auto custom-scrollbar">
-                <!-- Users will be listed here -->
             </div>
 
             <div class="p-4 border-t border-slate-700/50">
@@ -582,10 +517,8 @@ const firebaseConfig = {
             </div>
         </div>
 
-        <!-- Chat Area -->
         <div class="flex-1 flex flex-col">
             <div id="adminChatArea" class="hidden flex flex-col h-full">
-                <!-- Chat Header -->
                 <div class="glass-panel border-b border-slate-700/50 px-6 py-4 flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold" id="chatUserAvatar">
@@ -596,19 +529,11 @@ const firebaseConfig = {
                             <p class="text-xs text-slate-400">Anonymous User</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs bg-green-500/20 text-green-400 px-3 py-1 rounded-full border border-green-500/30">
-                            <i class="fas fa-circle text-[8px] mr-1"></i>Active
-                        </span>
-                    </div>
                 </div>
 
-                <!-- Messages -->
                 <div id="adminMessages" class="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                    <!-- Admin messages will be loaded here -->
                 </div>
 
-                <!-- Input -->
                 <div class="glass-panel border-t border-slate-700/50 p-4">
                     <div class="flex gap-3 max-w-4xl mx-auto">
                         <input 
@@ -628,7 +553,6 @@ const firebaseConfig = {
                 </div>
             </div>
 
-            <!-- Empty State -->
             <div id="emptyState" class="flex-1 flex items-center justify-center">
                 <div class="text-center text-slate-500">
                     <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
