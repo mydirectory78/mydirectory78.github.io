@@ -2,31 +2,30 @@
 <html lang="bn">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Anonymous Messenger</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // ⚠️⚠️⚠️ এখানে আপনার REAL Firebase Config বসান ⚠️⚠️⚠️
-        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAfnDGzS2QJyWDNPQl2LuO--GOxPAf7uxQ",
-  authDomain: "personal-message-379b4.firebaseapp.com",
-  databaseURL: "https://personal-message-379b4-default-rtdb.firebaseio.com",
-  projectId: "personal-message-379b4",
-  storageBucket: "personal-message-379b4.firebasestorage.app",
-  messagingSenderId: "861066018093",
-  appId: "1:861066018093:web:8ae48c3f9d5e9b3223a7a4",
-  measurementId: "G-NXP3HRYQXG"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyAfnDGzS2QJyWDNPQl2LuO--GOxPAf7uxQ",
+            authDomain: "personal-message-379b4.firebaseapp.com",
+            databaseURL: "https://personal-message-379b4-default-rtdb.firebaseio.com",
+            projectId: "personal-message-379b4",
+            storageBucket: "personal-message-379b4.firebasestorage.app",
+            messagingSenderId: "861066018093",
+            appId: "1:861066018093:web:8ae48c3f9d5e9b3223a7a4",
+            measurementId: "G-NXP3HRYQXG"
+        };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        const ENCRYPTION_KEY = "your-secret-key-change-this-2024";
+        const ENCRYPTION_KEY = "BangladeshAnonymous2024SecureChatKey!@#";
 
         async function getKey() {
             const encoder = new TextEncoder();
@@ -57,11 +56,357 @@ const firebaseConfig = {
                 const decoder = new TextDecoder();
                 return decoder.decode(decrypted);
             } catch (e) {
-                return "[Encrypted]";
+                return "🔒 Encrypted";
             }
         }
 
         let currentUser = null;
+        let isAdmin = false;
+        let selectedUser = null;
+        let unsubscribers = [];
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts.toDate ? ts.toDate() : ts);
+            return d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
+        }
+
+        function scrollToBottom(container) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ========== LOGIN ==========
+        document.getElementById('loginBtn').addEventListener('click', handleLogin);
+        document.getElementById('usernameInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+
+        function handleLogin() {
+            const username = document.getElementById('usernameInput').value.trim().toLowerCase();
+            if (!username) { return; }
+            currentUser = username;
+            isAdmin = username === 'admin';
+            document.getElementById('loginScreen').classList.add('hidden');
+            if (isAdmin) {
+                document.getElementById('adminScreen').classList.remove('hidden');
+                loadAdminPanel();
+            } else {
+                document.getElementById('userScreen').classList.remove('hidden');
+                loadUserChat();
+            }
+        }
+
+        document.getElementById('userLogout').addEventListener('click', () => location.reload());
+        document.getElementById('adminLogout').addEventListener('click', () => location.reload());
+
+        // ========== USER CHAT ==========
+        async function loadUserChat() {
+            unsubscribers.forEach(u => u());
+            unsubscribers = [];
+
+            const q = query(collection(db, 'messages'), where('participants', 'array-contains', currentUser));
+
+            const unsub = onSnapshot(q, async (snapshot) => {
+                const container = document.getElementById('userMessages');
+                container.innerHTML = '';
+
+                if (snapshot.empty) {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-full text-slate-400 select-none px-4">
+                            <div class="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center mb-3 ring-2 ring-slate-700/50">
+                                <i class="fas fa-lock text-2xl text-slate-600"></i>
+                            </div>
+                            <p class="text-base font-medium text-slate-300">End-to-End Encrypted</p>
+                            <p class="text-sm mt-1 text-slate-500 text-center">Admin কে আপনার প্রথম message পাঠান</p>
+                        </div>`;
+                    return;
+                }
+
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis?.() || 0;
+                    const tb = b.data().timestamp?.toMillis?.() || 0;
+                    return ta - tb;
+                });
+
+                let lastDate = '';
+                for (const docSnap of docs) {
+                    const data = docSnap.data();
+                    const text = await decryptMessage(data.encryptedText);
+                    const isMe = data.sender === currentUser;
+                    const time = formatTime(data.timestamp);
+
+                    const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
+                    if (date && date !== lastDate) {
+                        lastDate = date;
+                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = `flex ${isMe ? 'justify-end' : 'justify-start'} mb-2 px-3 md:px-5`;
+                    div.innerHTML = `
+                        <div class="max-w-[85%] md:max-w-[65%] ${isMe ? 'bubble-sent' : 'bubble-received'} px-3.5 py-2 shadow-sm animate-msg-in">
+                            <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
+                            <div class="flex items-center justify-end gap-1 mt-0.5">
+                                <span class="text-[10px] opacity-60 font-medium">${time}</span>
+                                ${isMe ? '<i class="fas fa-check-double text-[10px] opacity-60 ml-0.5"></i>' : ''}
+                            </div>
+                        </div>`;
+                    container.appendChild(div);
+                }
+
+                requestAnimationFrame(() => {
+                    scrollToBottom(container);
+                });
+            }, err => { console.error(err); });
+
+            unsubscribers.push(unsub);
+        }
+
+        // ========== INSTANT SEND - NO POPUP ==========
+        document.getElementById('userSendBtn').addEventListener('click', sendUserMsg);
+        document.getElementById('userMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendUserMsg(); });
+
+        async function sendUserMsg() {
+            const input = document.getElementById('userMsgInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // INSTANT: Show message immediately on screen
+            const container = document.getElementById('userMessages');
+            const tempId = 'temp-' + Date.now();
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            // Remove empty state if exists
+            if (container.querySelector('.flex-col.items-center.justify-center.h-full')) {
+                container.innerHTML = '';
+            }
+
+            // Add instant message with pending icon
+            const div = document.createElement('div');
+            div.id = tempId;
+            div.className = 'flex justify-end mb-2 px-3 md:px-5';
+            div.innerHTML = `
+                <div class="max-w-[85%] md:max-w-[65%] bubble-sent px-3.5 py-2 shadow-sm animate-msg-in opacity-80">
+                    <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
+                    <div class="flex items-center justify-end gap-1 mt-0.5">
+                        <span class="text-[10px] opacity-60 font-medium">${timeStr}</span>
+                        <i class="fas fa-clock text-[10px] opacity-40 ml-0.5 pending-icon"></i>
+                    </div>
+                </div>`;
+            container.appendChild(div);
+            scrollToBottom(container);
+
+            input.value = '';
+
+            // Send to Firebase in background
+            try {
+                const enc = await encryptMessage(text);
+                await addDoc(collection(db, 'messages'), {
+                    sender: currentUser, receiver: 'admin',
+                    participants: [currentUser, 'admin'],
+                    encryptedText: enc, timestamp: serverTimestamp(), read: false
+                });
+
+                // Update pending to checkmark
+                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
+                if (pendingIcon) {
+                    pendingIcon.className = 'fas fa-check text-[10px] opacity-60 ml-0.5';
+                    setTimeout(() => {
+                        pendingIcon.className = 'fas fa-check-double text-[10px] opacity-60 ml-0.5';
+                    }, 500);
+                }
+
+                // Remove opacity
+                const bubble = document.querySelector(`#${tempId} > div`);
+                if (bubble) bubble.classList.remove('opacity-80');
+
+            } catch (e) {
+                // Show error on the message itself
+                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
+                if (pendingIcon) {
+                    pendingIcon.className = 'fas fa-exclamation-circle text-[10px] text-red-400 ml-0.5';
+                }
+                console.error('Send failed:', e);
+            }
+        }
+
+        // ========== ADMIN PANEL ==========
+        async function loadAdminPanel() {
+            unsubscribers.forEach(u => u());
+            unsubscribers = [];
+
+            const q = query(collection(db, 'messages'));
+            const unsub = onSnapshot(q, async (snapshot) => {
+                const users = new Map();
+                snapshot.docs.forEach(doc => {
+                    const d = doc.data();
+                    const other = d.sender === 'admin' ? d.receiver : d.sender;
+                    if (other !== 'admin' && !users.has(other)) {
+                        users.set(other, { username: other, lastMsg: d.encryptedText, ts: d.timestamp });
+                    }
+                });
+
+                const list = document.getElementById('adminUserList');
+                list.innerHTML = '';
+
+                if (users.size === 0) {
+                    list.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-48 text-slate-500 px-4">
+                            <i class="fas fa-inbox text-3xl mb-2 opacity-20"></i>
+                            <p class="text-sm">কোনো conversation নেই</p>
+                            <p class="text-xs mt-1 opacity-50">কেউ message পাঠালে এখানে দেখাবে</p>
+                        </div>`;
+                    return;
+                }
+
+                for (const [_, u] of users) {
+                    const decrypted = await decryptMessage(u.lastMsg);
+                    const time = formatTime(u.ts);
+                    const el = document.createElement('div');
+                    el.className = `user-item ${selectedUser === u.username ? 'active' : ''}`;
+                    el.onclick = () => openAdminChat(u.username);
+                    el.innerHTML = `
+                        <div class="avatar shrink-0">${u.username.charAt(0).toUpperCase()}</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-baseline mb-0.5">
+                                <h3 class="font-semibold text-slate-200 truncate text-[15px]">${u.username}</h3>
+                                <span class="text-[11px] text-slate-500 shrink-0">${time}</span>
+                            </div>
+                            <p class="text-sm text-slate-400 truncate">${escapeHtml(decrypted)}</p>
+                        </div>`;
+                    list.appendChild(el);
+                }
+            });
+            unsubscribers.push(unsub);
+        }
+
+        async function openAdminChat(username) {
+            selectedUser = username;
+            document.getElementById('adminChatHeader').textContent = username;
+            document.getElementById('adminChatHeaderAvatar').textContent = username.charAt(0).toUpperCase();
+
+            if (window.innerWidth < 768) {
+                document.getElementById('adminSidebar').classList.add('mobile-hidden');
+                document.getElementById('adminChatArea').classList.remove('mobile-hidden');
+                document.getElementById('adminChatArea').classList.add('mobile-show');
+            }
+
+            document.getElementById('adminChatArea').classList.remove('hidden');
+            document.getElementById('adminEmptyState').classList.add('hidden');
+
+            unsubscribers.forEach(u => u());
+            unsubscribers = [];
+
+            const q = query(collection(db, 'messages'), where('participants', 'array-contains', username));
+            const unsub = onSnapshot(q, async (snapshot) => {
+                const container = document.getElementById('adminMessages');
+                container.innerHTML = '';
+
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis?.() || 0;
+                    const tb = b.data().timestamp?.toMillis?.() || 0;
+                    return ta - tb;
+                });
+
+                let lastDate = '';
+                for (const docSnap of docs) {
+                    const data = docSnap.data();
+                    const text = await decryptMessage(data.encryptedText);
+                    const isAdmin = data.sender === 'admin';
+                    const time = formatTime(data.timestamp);
+
+                    const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
+                    if (date && date !== lastDate) {
+                        lastDate = date;
+                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = `flex ${isAdmin ? 'justify-end' : 'justify-start'} mb-2 px-3 md:px-5`;
+                    div.innerHTML = `
+                        <div class="max-w-[85%] md:max-w-[65%] ${isAdmin ? 'bubble-sent' : 'bubble-received'} px-3.5 py-2 shadow-sm animate-msg-in">
+                            <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
+                            <div class="flex items-center justify-end gap-1 mt-0.5">
+                                <span class="text-[10px] opacity-60 font-medium">${time}</span>
+                                ${isAdmin ? '<i class="fas fa-check-double text-[10px] opacity-60 ml-0.5"></i>' : ''}
+                            </div>
+                        </div>`;
+                    container.appendChild(div);
+                }
+
+                requestAnimationFrame(() => {
+                    scrollToBottom(container);
+                });
+            });
+            unsubscribers.push(unsub);
+        }
+
+        // ========== ADMIN INSTANT SEND ==========
+        document.getElementById('adminSendBtn').addEventListener('click', sendAdminReply);
+        document.getElementById('adminMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendAdminReply(); });
+
+        async function sendAdminReply() {
+            if (!selectedUser) { return; }
+            const input = document.getElementById('adminMsgInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // INSTANT: Show message immediately
+            const container = document.getElementById('adminMessages');
+            const tempId = 'temp-admin-' + Date.now();
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            const div = document.createElement('div');
+            div.id = tempId;
+            div.className = 'flex justify-end mb-2 px-3 md:px-5';
+            div.innerHTML = `
+                <div class="max-w-[85%] md:max-w-[65%] bubble-sent px-3.5 py-2 shadow-sm animate-msg-in opacity-80">
+                    <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
+                    <div class="flex items-center justify-end gap-1 mt-0.5">
+                        <span class="text-[10px] opacity-60 font-medium">${timeStr}</span>
+                        <i class="fas fa-clock text-[10px] opacity-40 ml-0.5 pending-icon"></i>
+                    </div>
+                </div>`;
+            container.appendChild(div);
+            scrollToBottom(container);
+
+            input.value = '';
+
+            try {
+                const enc = await encryptMessage(text);
+                await addDoc(collection(db, 'messages'), {
+                    sender: 'admin', receiver: selectedUser,
+                    participants: [selectedUser, 'admin'],
+                    encryptedText: enc, timestamp: serverTimestamp(), read: false
+                });
+
+                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
+                if (pendingIcon) {
+                    pendingIcon.className = 'fas fa-check text-[10px] opacity-60 ml-0.5';
+                    setTimeout(() => {
+                        pendingIcon.className = 'fas fa-check-double text-[10px] opacity-60 ml-0.5';
+                    }, 500);
+                }
+
+                const bubble = document.querySelector(`#${tempId} > div`);
+                if (bubble) bubble.classList.remove('opacity-80');
+
+            } catch (e) {
+                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
+                if (pendingIcon) {
+                    pendingIcon.className = 'fas fa-exclamation-circle text-[10px] text-red-400 ml-0.5';
+                }
+                console.error('Send failed:', e);
+            }
+        }
+
+        document.getElementById('mobileBackBtn').addEventListener        let currentUser = null;
         let isAdmin = false;
         let selectedUser = null;
         let unsubscribers = [];
