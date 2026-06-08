@@ -423,6 +423,368 @@ const firebaseConfig = {
                             type="text" 
                             placeholder="যেমন: rahat, user123, admin"
                             class="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
+                        let currentUser = null;
+        let isAdmin = false;
+        let selectedUser = null;
+        let unsubscribers = [];
+
+        const loginScreen = document.getElementById('loginScreen');
+        const chatScreen = document.getElementById('chatScreen');
+        const adminScreen = document.getElementById('adminScreen');
+        const usernameInput = document.getElementById('usernameInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const messagesContainer = document.getElementById('messagesContainer');
+        const userList = document.getElementById('userList');
+        const adminChatArea = document.getElementById('adminChatArea');
+        const adminMessages = document.getElementById('adminMessages');
+        const adminMessageInput = document.getElementById('adminMessageInput');
+        const adminSendBtn = document.getElementById('adminSendBtn');
+        const currentChatHeader = document.getElementById('currentChatHeader');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+            toast.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-xl z-50 animate-fade-in`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        loginBtn.addEventListener('click', handleLogin);
+        usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+
+        function handleLogin() {
+            const username = usernameInput.value.trim().toLowerCase();
+            if (!username) { showToast('Username দিন!', 'error'); return; }
+            currentUser = username;
+            isAdmin = username === 'admin';
+            if (isAdmin) showAdminScreen(); else showChatScreen();
+        }
+
+        function showChatScreen() {
+            loginScreen.classList.add('hidden');
+            chatScreen.classList.remove('hidden');
+            document.getElementById('chatUsername').textContent = currentUser;
+            loadUserMessages();
+        }
+
+        function showAdminScreen() {
+            loginScreen.classList.add('hidden');
+            adminScreen.classList.remove('hidden');
+            loadAdminUserList();
+        }
+
+        // ==========================================
+        // USER CHAT - NO orderBy (Index not needed!)
+        // ==========================================
+        async function loadUserMessages() {
+            unsubscribers.forEach(unsub => unsub());
+            unsubscribers = [];
+
+            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
+            const q = query(
+                collection(db, 'messages'),
+                where('participants', 'array-contains', currentUser)
+            );
+
+            const unsub = onSnapshot(q, async (snapshot) => {
+                messagesContainer.innerHTML = '';
+
+                if (snapshot.empty) {
+                    messagesContainer.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-full text-slate-400">
+                            <i class="fas fa-comments text-6xl mb-4 opacity-20"></i>
+                            <p>Admin কে message পাঠান!</p>
+                            <p class="text-sm opacity-60">আপনার সব message encrypted থাকবে</p>
+                        </div>`;
+                    return;
+                }
+
+                // Client-side sorting by timestamp
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis() || 0;
+                    const tb = b.data().timestamp?.toMillis() || 0;
+                    return ta - tb;
+                });
+
+                for (const docSnap of docs) {
+                    const data = docSnap.data();
+                    const decryptedText = await decryptMessage(data.encryptedText);
+                    const isSentByMe = data.sender === currentUser;
+                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `flex ${isSentByMe ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
+                    msgDiv.innerHTML = `
+                        <div class="max-w-[80%] ${isSentByMe ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
+                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
+                            <div class="flex items-center justify-end gap-1 mt-1">
+                                <span class="text-xs opacity-60">${time}</span>
+                                ${isSentByMe ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
+                            </div>
+                        </div>`;
+                    messagesContainer.appendChild(msgDiv);
+                }
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, (error) => {
+                console.error("Error:", error);
+                showToast('Error: ' + error.message, 'error');
+            });
+
+            unsubscribers.push(unsub);
+        }
+
+        sendBtn.addEventListener('click', sendUserMessage);
+        messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendUserMessage(); });
+
+        async function sendUserMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+            const encrypted = await encryptMessage(text);
+            try {
+                await addDoc(collection(db, 'messages'), {
+                    sender: currentUser,
+                    receiver: 'admin',
+                    participants: [currentUser, 'admin'],
+                    encryptedText: encrypted,
+                    timestamp: serverTimestamp(),
+                    read: false
+                });
+                messageInput.value = '';
+                showToast('Message sent!', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Error: ' + error.message, 'error');
+            }
+        }
+
+        // ==========================================
+        // ADMIN PANEL - NO orderBy (Index not needed!)
+        // ==========================================
+        async function loadAdminUserList() {
+            const q = query(collection(db, 'messages'));
+
+            const unsub = onSnapshot(q, async (snapshot) => {
+                const users = new Map();
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    const otherUser = data.sender === 'admin' ? data.receiver : data.sender;
+                    if (otherUser !== 'admin' && !users.has(otherUser)) {
+                        users.set(otherUser, {
+                            username: otherUser,
+                            lastMessage: data.encryptedText,
+                            timestamp: data.timestamp
+                        });
+                    }
+                });
+
+                userList.innerHTML = '';
+
+                if (users.size === 0) {
+                    userList.innerHTML = `
+                        <div class="p-8 text-center text-slate-400">
+                            <i class="fas fa-inbox text-4xl mb-2 opacity-30"></i>
+                            <p class="text-sm">কোনো message নেই</p>
+                        </div>`;
+                    return;
+                }
+
+                users.forEach(async (userData) => {
+                    const decrypted = await decryptMessage(userData.lastMessage);
+                    const userDiv = document.createElement('div');
+                    userDiv.className = `p-4 hover:bg-slate-700/50 cursor-pointer transition-all border-b border-slate-700/50 ${selectedUser === userData.username ? 'bg-slate-700/50 border-l-4 border-l-blue-500' : ''}`;
+                    userDiv.onclick = () => selectUser(userData.username);
+
+                    const time = userData.timestamp ? new Date(userData.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    userDiv.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                                ${userData.username.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-start">
+                                    <h3 class="font-medium text-slate-200 truncate">${userData.username}</h3>
+                                    <span class="text-xs text-slate-500">${time}</span>
+                                </div>
+                                <p class="text-sm text-slate-400 truncate">${escapeHtml(decrypted)}</p>
+                            </div>
+                        </div>`;
+                    userList.appendChild(userDiv);
+                });
+            }, (error) => {
+                console.error("Admin error:", error);
+                showToast('Admin error: ' + error.message, 'error');
+            });
+
+            unsubscribers.push(unsub);
+        }
+
+        async function selectUser(username) {
+            selectedUser = username;
+            currentChatHeader.textContent = username;
+            document.getElementById('chatUserAvatar').textContent = username.charAt(0).toUpperCase();
+            adminChatArea.classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            loadAdminChat(username);
+        }
+
+        async function loadAdminChat(username) {
+            unsubscribers.forEach(unsub => unsub());
+            unsubscribers = [];
+
+            // ⚠️ orderBy বাদ দিয়েছি — index লাগবে না!
+            const q = query(
+                collection(db, 'messages'),
+                where('participants', 'array-contains', username)
+            );
+
+            const unsub = onSnapshot(q, async (snapshot) => {
+                adminMessages.innerHTML = '';
+
+                // Client-side sorting
+                const docs = snapshot.docs.sort((a, b) => {
+                    const ta = a.data().timestamp?.toMillis() || 0;
+                    const tb = b.data().timestamp?.toMillis() || 0;
+                    return ta - tb;
+                });
+
+                for (const docSnap of docs) {
+                    const data = docSnap.data();
+                    const decryptedText = await decryptMessage(data.encryptedText);
+                    const isAdminMsg = data.sender === 'admin';
+                    const time = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `flex ${isAdminMsg ? 'justify-end' : 'justify-start'} mb-4 message-bubble`;
+                    msgDiv.innerHTML = `
+                        <div class="max-w-[80%] ${isAdminMsg ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'} rounded-2xl px-4 py-3 shadow-lg">
+                            <p class="text-sm">${escapeHtml(decryptedText)}</p>
+                            <div class="flex items-center justify-end gap-1 mt-1">
+                                <span class="text-xs opacity-60">${time}</span>
+                                ${isAdminMsg ? '<i class="fas fa-check-double text-xs opacity-60"></i>' : ''}
+                            </div>
+                        </div>`;
+                    adminMessages.appendChild(msgDiv);
+                }
+                adminMessages.scrollTop = adminMessages.scrollHeight;
+            }, (error) => {
+                console.error("Chat error:", error);
+                showToast('Chat error: ' + error.message, 'error');
+            });
+
+            unsubscribers.push(unsub);
+        }
+
+        adminSendBtn.addEventListener('click', sendAdminReply);
+        adminMessageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAdminReply(); });
+
+        async function sendAdminReply() {
+            if (!selectedUser) { showToast('একটি user select করুন!', 'error'); return; }
+            const text = adminMessageInput.value.trim();
+            if (!text) return;
+            const encrypted = await encryptMessage(text);
+            try {
+                await addDoc(collection(db, 'messages'), {
+                    sender: 'admin',
+                    receiver: selectedUser,
+                    participants: [selectedUser, 'admin'],
+                    encryptedText: encrypted,
+                    timestamp: serverTimestamp(),
+                    read: false
+                });
+                adminMessageInput.value = '';
+                showToast('Reply sent!', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Error: ' + error.message, 'error');
+            }
+        }
+
+        logoutBtn.addEventListener('click', () => location.reload());
+        adminLogoutBtn.addEventListener('click', () => location.reload());
+
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
+        * { font-family: 'Hind Siliguri', sans-serif; }
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .message-bubble {
+            animation: messagePop 0.3s ease-out;
+        }
+        @keyframes messagePop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .input-glow:focus {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
+        <div class="glass-panel rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                    <i class="fas fa-user-secret text-3xl text-white"></i>
+                </div>
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    Anonymous Chat
+                </h1>
+                <p class="text-slate-400 mt-2 text-sm">End-to-End Encrypted Messaging</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-2">Username দিন</label>
+                    <div class="relative">
+                        <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        <input 
+                            id="usernameInput" 
+                            type="text" 
+                            placeholder="যেমন: rahat, user123, admin"
+                            class="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 input-glow transition-all"
                         >
                     </div>
                 </div>
