@@ -2,7 +2,7 @@
 <html lang="bn">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Anonymous Messenger</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -168,7 +168,6 @@
             unsubscribers.push(unsub);
         }
 
-        // ========== SEND MESSAGE (Keyboard stays open!) ==========
         document.getElementById('userSendBtn').addEventListener('click', sendUserMsg);
         document.getElementById('userMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendUserMsg(); });
 
@@ -184,8 +183,6 @@
                     encryptedText: enc, timestamp: serverTimestamp(), read: false
                 });
                 input.value = '';
-                // FIX: Keep keyboard open by focusing back
-                setTimeout(() => input.focus(), 50);
             } catch (e) { showToast('Send failed', 'error'); }
         }
 
@@ -297,7 +294,6 @@
             unsubscribers.push(unsub);
         }
 
-        // ========== ADMIN SEND (Keyboard stays open!) ==========
         document.getElementById('adminSendBtn').addEventListener('click', sendAdminReply);
         document.getElementById('adminMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendAdminReply(); });
 
@@ -314,8 +310,6 @@
                     encryptedText: enc, timestamp: serverTimestamp(), read: false
                 });
                 input.value = '';
-                // FIX: Keep keyboard open by focusing back
-                setTimeout(() => input.focus(), 50);
             } catch (e) { showToast('Reply failed', 'error'); }
         }
 
@@ -356,15 +350,6 @@
             overscroll-behavior: none;
         }
 
-        /* ========== SAFE AREA FIX (Notch phones) ========== */
-        .safe-area-top {
-            padding-top: max(12px, env(safe-area-inset-top));
-        }
-
-        .safe-area-bottom {
-            padding-bottom: max(12px, env(safe-area-inset-bottom));
-        }
-
         /* ========== LOGIN ========== */
         .login-screen {
             height: 100%;
@@ -373,8 +358,6 @@
             align-items: center;
             justify-content: center;
             padding: 16px;
-            padding-top: max(16px, env(safe-area-inset-top));
-            padding-bottom: max(16px, env(safe-area-inset-bottom));
             background: radial-gradient(ellipse at 20% 20%, rgba(16, 185, 129, 0.12) 0%, transparent 50%),
                         radial-gradient(ellipse at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
                         #0f172a;
@@ -395,7 +378,7 @@
             .glass-card { padding: 24px; border-radius: 20px; }
         }
 
-        /* ========== APP ROOT ========== */
+        /* ========== APP LAYOUT ========== */
         .app-root {
             height: 100%;
             width: 100%;
@@ -403,34 +386,27 @@
             flex-direction: column;
             overflow: hidden;
             background: #0f172a;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
         }
 
-        /* ========== HEADER ========== */
+        /* ========== HEADER (Fixed) ========== */
         .chat-header {
             flex-shrink: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
             padding: 10px 12px;
-            padding-top: max(10px, env(safe-area-inset-top));
             display: flex;
             align-items: center;
             justify-content: space-between;
             z-index: 10;
             min-height: 56px;
-            position: relative;
         }
 
         @media (min-width: 768px) {
-            .chat-header { padding: 12px 20px; padding-top: max(12px, env(safe-area-inset-top)); min-height: 64px; }
+            .chat-header { padding: 12px 20px; min-height: 64px; }
         }
 
-        /* ========== MESSAGES ========== */
+        /* ========== MESSAGES (Scrollable) ========== */
         .messages-scroll {
             flex: 1;
             overflow-y: auto;
@@ -439,8 +415,7 @@
             overscroll-behavior-y: contain;
             padding: 8px 0;
             background: #0f172a;
-            min-height: 0;
-            position: relative;
+            min-height: 0; /* CRITICAL for flex child */
         }
 
         @media (min-width: 768px) {
@@ -450,20 +425,18 @@
             }
         }
 
-        /* ========== INPUT BAR ========== */
+        /* ========== INPUT (Fixed) ========== */
         .input-bar {
             flex-shrink: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-top: 1px solid rgba(255,255,255,0.04);
             padding: 8px 12px;
-            padding-bottom: max(8px, env(safe-area-inset-bottom));
             z-index: 10;
-            position: relative;
         }
 
         @media (min-width: 768px) {
-            .input-bar { padding: 12px 20px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+            .input-bar { padding: 12px 20px; }
         }
 
         .msg-input {
@@ -471,13 +444,12 @@
             border: 1px solid rgba(255,255,255,0.06);
             border-radius: 24px;
             padding: 10px 16px;
-            font-size: 16px; /* Prevents iOS zoom */
+            font-size: 15px;
             color: #e2e8f0;
             outline: none;
             flex: 1;
             min-height: 44px;
             max-height: 120px;
-            -webkit-appearance: none;
         }
 
         .msg-input:focus { border-color: rgba(16, 185, 129, 0.4); }
@@ -497,7 +469,6 @@
             flex-shrink: 0;
             box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
             transition: transform 0.15s;
-            -webkit-tap-highlight-color: transparent;
         }
 
         .send-btn:active { transform: scale(0.92); }
@@ -534,11 +505,6 @@
             width: 100%;
             display: flex;
             overflow: hidden;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
         }
 
         .sidebar {
@@ -562,12 +528,11 @@
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
             padding: 12px 16px;
-            padding-top: max(12px, env(safe-area-inset-top));
             z-index: 10;
         }
 
         @media (min-width: 768px) {
-            .sidebar-header { padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top)); }
+            .sidebar-header { padding: 16px 20px; }
         }
 
         .search-box {
@@ -641,6 +606,7 @@
             .avatar { width: 52px; height: 52px; font-size: 20px; }
         }
 
+        /* ========== ADMIN CHAT AREA ========== */
         .admin-chat {
             flex: 1;
             display: flex;
@@ -654,7 +620,7 @@
             .admin-chat { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); }
         }
 
-        /* ========== MOBILE ========== */
+        /* ========== MOBILE UTILITIES ========== */
         .mobile-hidden { display: none !important; }
         .mobile-show { display: flex !important; }
 
@@ -687,6 +653,7 @@
         }
         .animate-fade-up { animation: fadeUp 0.4s ease-out; }
 
+        /* ========== STATUS ========== */
         .status-dot {
             width: 8px;
             height: 8px;
@@ -701,6 +668,7 @@
             50% { opacity: 0.6; }
         }
 
+        /* ========== EMPTY STATE ========== */
         .empty-state-icon {
             width: 64px;
             height: 64px;
@@ -718,6 +686,8 @@
         }
 
         .no-select { user-select: none; -webkit-user-select: none; }
+
+        /* ========== HIDDEN UTILITY ========== */
         .hidden { display: none !important; }
     </style>
 </head>
@@ -743,16 +713,15 @@
                             id="usernameInput" 
                             type="text" 
                             placeholder="যেমন: rahat, user123, admin"
-                            class="w-full bg-slate-800/60 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all text-base"
+                            class="w-full bg-slate-800/60 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all text-[15px]"
                             autocomplete="off"
-                            autocapitalize="off"
                         >
                     </div>
                 </div>
 
                 <button 
                     id="loginBtn" 
-                    class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-3 rounded-xl transition-all transform active:scale-[0.98] shadow-lg shadow-emerald-500/20 text-base"
+                    class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-3 rounded-xl transition-all transform active:scale-[0.98] shadow-lg shadow-emerald-500/20 text-[15px]"
                 >
                     <i class="fas fa-sign-in-alt mr-2"></i>Login করুন
                 </button>
@@ -770,7 +739,7 @@
 
     <!-- ========== USER CHAT SCREEN ========== -->
     <div id="userScreen" class="hidden app-root">
-        <!-- Header -->
+        <!-- Header (Fixed) -->
         <div class="chat-header no-select">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -794,11 +763,11 @@
             </div>
         </div>
 
-        <!-- Messages -->
+        <!-- Messages (Scrollable) -->
         <div id="userMessages" class="messages-scroll custom-scroll">
         </div>
 
-        <!-- Input -->
+        <!-- Input (Fixed) -->
         <div class="input-bar">
             <div class="flex gap-2.5 max-w-5xl mx-auto items-end">
                 <input 
@@ -807,7 +776,6 @@
                     placeholder="Message লিখুন..."
                     class="msg-input"
                     autocomplete="off"
-                    autocapitalize="off"
                 >
                 <button 
                     id="userSendBtn" 
@@ -897,7 +865,6 @@
                             placeholder="Reply লিখুন..."
                             class="msg-input"
                             autocomplete="off"
-                            autocapitalize="off"
                         >
                         <button 
                             id="adminSendBtn" 
