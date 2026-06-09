@@ -77,8 +77,13 @@
             return d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
         }
 
-        function scrollToBottom(container) {
-            container.scrollTop = container.scrollHeight;
+        function showToast(msg, type = 'info') {
+            const bg = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-emerald-500' : 'bg-blue-500';
+            const t = document.createElement('div');
+            t.className = `fixed top-4 left-1/2 -translate-x-1/2 ${bg} text-white px-5 py-3 rounded-full shadow-2xl z-[100] text-sm font-medium animate-toast`;
+            t.innerHTML = `<i class="fas ${type === 'error' ? 'fa-exclamation-circle' : type === 'success' ? 'fa-check-circle' : 'fa-info-circle'} mr-2"></i>${msg}`;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(-20px)'; setTimeout(() => t.remove(), 300); }, 3000);
         }
 
         // ========== LOGIN ==========
@@ -87,9 +92,9 @@
 
         function handleLogin() {
             const username = document.getElementById('usernameInput').value.trim().toLowerCase();
-            if (!username) { return; }
+            if (!username) { showToast('Username দিন!', 'error'); return; }
             currentUser = username;
-            isAdmin = username === '*পাগলাদাশু*';
+            isAdmin = username === 'admin';
             document.getElementById('loginScreen').classList.add('hidden');
             if (isAdmin) {
                 document.getElementById('adminScreen').classList.remove('hidden');
@@ -116,12 +121,12 @@
 
                 if (snapshot.empty) {
                     container.innerHTML = `
-                        <div class="flex flex-col items-center justify-center min-h-full text-slate-400 select-none px-4 py-20">
+                        <div class="flex flex-col items-center justify-center h-full text-slate-400 select-none px-4">
                             <div class="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center mb-3 ring-2 ring-slate-700/50">
                                 <i class="fas fa-lock text-2xl text-slate-600"></i>
                             </div>
                             <p class="text-base font-medium text-slate-300">End-to-End Encrypted</p>
-                            <p class="text-sm mt-1 text-slate-500 text-center">Joy কে আপনার প্রথম message পাঠান</p>
+                            <p class="text-sm mt-1 text-slate-500 text-center">Admin কে আপনার প্রথম message পাঠান</p>
                         </div>`;
                     return;
                 }
@@ -142,10 +147,7 @@
                     const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
                     if (date && date !== lastDate) {
                         lastDate = date;
-                        const dateDiv = document.createElement('div');
-                        dateDiv.className = 'flex justify-center my-4';
-                        dateDiv.innerHTML = `<span class="date-pill">${date}</span>`;
-                        container.appendChild(dateDiv);
+                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
                     }
 
                     const div = document.createElement('div');
@@ -160,16 +162,13 @@
                         </div>`;
                     container.appendChild(div);
                 }
-
-                requestAnimationFrame(() => {
-                    scrollToBottom(container);
-                });
-            }, err => { console.error(err); });
+                container.scrollTop = container.scrollHeight;
+            }, err => { console.error(err); showToast('Connection error', 'error'); });
 
             unsubscribers.push(unsub);
         }
 
-        // ========== INSTANT SEND ==========
+        // ========== SEND MESSAGE (Keyboard stays open!) ==========
         document.getElementById('userSendBtn').addEventListener('click', sendUserMsg);
         document.getElementById('userMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendUserMsg(); });
 
@@ -177,59 +176,17 @@
             const input = document.getElementById('userMsgInput');
             const text = input.value.trim();
             if (!text) return;
-
-            const container = document.getElementById('userMessages');
-            const tempId = 'temp-' + Date.now();
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-            // Remove empty state
-            const emptyState = container.querySelector('.min-h-full');
-            if (emptyState) emptyState.remove();
-
-            // Add instant message
-            const div = document.createElement('div');
-            div.id = tempId;
-            div.className = 'flex justify-end mb-2 px-3 md:px-5';
-            div.innerHTML = `
-                <div class="max-w-[85%] md:max-w-[65%] bubble-sent px-3.5 py-2 shadow-sm animate-msg-in opacity-80">
-                    <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
-                    <div class="flex items-center justify-end gap-1 mt-0.5">
-                        <span class="text-[10px] opacity-60 font-medium">${timeStr}</span>
-                        <i class="fas fa-clock text-[10px] opacity-40 ml-0.5 pending-icon"></i>
-                    </div>
-                </div>`;
-            container.appendChild(div);
-            scrollToBottom(container);
-
-            input.value = '';
-
+            const enc = await encryptMessage(text);
             try {
-                const enc = await encryptMessage(text);
                 await addDoc(collection(db, 'messages'), {
                     sender: currentUser, receiver: 'admin',
                     participants: [currentUser, 'admin'],
                     encryptedText: enc, timestamp: serverTimestamp(), read: false
                 });
-
-                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
-                if (pendingIcon) {
-                    pendingIcon.className = 'fas fa-check text-[10px] opacity-60 ml-0.5';
-                    setTimeout(() => {
-                        pendingIcon.className = 'fas fa-check-double text-[10px] opacity-60 ml-0.5';
-                    }, 500);
-                }
-
-                const bubble = document.querySelector(`#${tempId} > div`);
-                if (bubble) bubble.classList.remove('opacity-80');
-
-            } catch (e) {
-                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
-                if (pendingIcon) {
-                    pendingIcon.className = 'fas fa-exclamation-circle text-[10px] text-red-400 ml-0.5';
-                }
-                console.error('Send failed:', e);
-            }
+                input.value = '';
+                // FIX: Keep keyboard open by focusing back
+                setTimeout(() => input.focus(), 50);
+            } catch (e) { showToast('Send failed', 'error'); }
         }
 
         // ========== ADMIN PANEL ==========
@@ -320,10 +277,7 @@
                     const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
                     if (date && date !== lastDate) {
                         lastDate = date;
-                        const dateDiv = document.createElement('div');
-                        dateDiv.className = 'flex justify-center my-4';
-                        dateDiv.innerHTML = `<span class="date-pill">${date}</span>`;
-                        container.appendChild(dateDiv);
+                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
                     }
 
                     const div = document.createElement('div');
@@ -338,71 +292,31 @@
                         </div>`;
                     container.appendChild(div);
                 }
-
-                requestAnimationFrame(() => {
-                    scrollToBottom(container);
-                });
+                container.scrollTop = container.scrollHeight;
             });
             unsubscribers.push(unsub);
         }
 
-        // ========== ADMIN INSTANT SEND ==========
+        // ========== ADMIN SEND (Keyboard stays open!) ==========
         document.getElementById('adminSendBtn').addEventListener('click', sendAdminReply);
         document.getElementById('adminMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendAdminReply(); });
 
         async function sendAdminReply() {
-            if (!selectedUser) { return; }
+            if (!selectedUser) { showToast('User select করুন!', 'error'); return; }
             const input = document.getElementById('adminMsgInput');
             const text = input.value.trim();
             if (!text) return;
-
-            const container = document.getElementById('adminMessages');
-            const tempId = 'temp-admin-' + Date.now();
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-            const div = document.createElement('div');
-            div.id = tempId;
-            div.className = 'flex justify-end mb-2 px-3 md:px-5';
-            div.innerHTML = `
-                <div class="max-w-[85%] md:max-w-[65%] bubble-sent px-3.5 py-2 shadow-sm animate-msg-in opacity-80">
-                    <p class="text-[15px] leading-snug">${escapeHtml(text)}</p>
-                    <div class="flex items-center justify-end gap-1 mt-0.5">
-                        <span class="text-[10px] opacity-60 font-medium">${timeStr}</span>
-                        <i class="fas fa-clock text-[10px] opacity-40 ml-0.5 pending-icon"></i>
-                    </div>
-                </div>`;
-            container.appendChild(div);
-            scrollToBottom(container);
-
-            input.value = '';
-
+            const enc = await encryptMessage(text);
             try {
-                const enc = await encryptMessage(text);
                 await addDoc(collection(db, 'messages'), {
                     sender: 'admin', receiver: selectedUser,
                     participants: [selectedUser, 'admin'],
                     encryptedText: enc, timestamp: serverTimestamp(), read: false
                 });
-
-                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
-                if (pendingIcon) {
-                    pendingIcon.className = 'fas fa-check text-[10px] opacity-60 ml-0.5';
-                    setTimeout(() => {
-                        pendingIcon.className = 'fas fa-check-double text-[10px] opacity-60 ml-0.5';
-                    }, 500);
-                }
-
-                const bubble = document.querySelector(`#${tempId} > div`);
-                if (bubble) bubble.classList.remove('opacity-80');
-
-            } catch (e) {
-                const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
-                if (pendingIcon) {
-                    pendingIcon.className = 'fas fa-exclamation-circle text-[10px] text-red-400 ml-0.5';
-                }
-                console.error('Send failed:', e);
-            }
+                input.value = '';
+                // FIX: Keep keyboard open by focusing back
+                setTimeout(() => input.focus(), 50);
+            } catch (e) { showToast('Reply failed', 'error'); }
         }
 
         document.getElementById('mobileBackBtn').addEventListener('click', () => {
@@ -442,6 +356,15 @@
             overscroll-behavior: none;
         }
 
+        /* ========== SAFE AREA FIX (Notch phones) ========== */
+        .safe-area-top {
+            padding-top: max(12px, env(safe-area-inset-top));
+        }
+
+        .safe-area-bottom {
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+        }
+
         /* ========== LOGIN ========== */
         .login-screen {
             height: 100%;
@@ -472,26 +395,24 @@
             .glass-card { padding: 24px; border-radius: 20px; }
         }
 
-        /* ========== CRITICAL FIX: CHAT LAYOUT ========== */
-        .chat-wrapper {
+        /* ========== APP ROOT ========== */
+        .app-root {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0f172a;
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: #0f172a;
         }
 
-        /* ========== HEADER: STICKY TOP ========== */
+        /* ========== HEADER ========== */
         .chat-header {
-            position: sticky;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
+            flex-shrink: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -500,21 +421,16 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            height: 56px;
+            z-index: 10;
             min-height: 56px;
-            flex-shrink: 0;
+            position: relative;
         }
 
         @media (min-width: 768px) {
-            .chat-header { 
-                padding: 12px 20px; 
-                padding-top: max(12px, env(safe-area-inset-top)); 
-                height: 64px;
-                min-height: 64px;
-            }
+            .chat-header { padding: 12px 20px; padding-top: max(12px, env(safe-area-inset-top)); min-height: 64px; }
         }
 
-        /* ========== MESSAGES: SCROLLABLE MIDDLE ========== */
+        /* ========== MESSAGES ========== */
         .messages-scroll {
             flex: 1;
             overflow-y: auto;
@@ -523,10 +439,8 @@
             overscroll-behavior-y: contain;
             padding: 8px 0;
             background: #0f172a;
-            position: relative;
-            scroll-behavior: smooth;
             min-height: 0;
-            display: block;
+            position: relative;
         }
 
         @media (min-width: 768px) {
@@ -536,26 +450,20 @@
             }
         }
 
-        /* ========== INPUT: STICKY BOTTOM ========== */
+        /* ========== INPUT BAR ========== */
         .input-bar {
-            position: sticky;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
+            flex-shrink: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-top: 1px solid rgba(255,255,255,0.04);
             padding: 8px 12px;
             padding-bottom: max(8px, env(safe-area-inset-bottom));
-            flex-shrink: 0;
+            z-index: 10;
+            position: relative;
         }
 
         @media (min-width: 768px) {
-            .input-bar { 
-                padding: 12px 20px; 
-                padding-bottom: max(12px, env(safe-area-inset-bottom)); 
-            }
+            .input-bar { padding: 12px 20px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
         }
 
         .msg-input {
@@ -563,7 +471,7 @@
             border: 1px solid rgba(255,255,255,0.06);
             border-radius: 24px;
             padding: 10px 16px;
-            font-size: 16px;
+            font-size: 16px; /* Prevents iOS zoom */
             color: #e2e8f0;
             outline: none;
             flex: 1;
@@ -594,6 +502,7 @@
 
         .send-btn:active { transform: scale(0.92); }
 
+        /* ========== BUBBLES ========== */
         .bubble-sent {
             background: linear-gradient(135deg, #059669 0%, #10b981 100%);
             color: white;
@@ -608,6 +517,7 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         }
 
+        /* ========== DATE PILL ========== */
         .date-pill {
             background: rgba(30, 41, 59, 0.8);
             color: #94a3b8;
@@ -618,16 +528,17 @@
             border: 1px solid rgba(255,255,255,0.04);
         }
 
-        /* ========== ADMIN LAYOUT ========== */
+        /* ========== ADMIN SIDEBAR ========== */
         .admin-layout {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            overflow: hidden;
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            display: flex;
-            overflow: hidden;
-            background: #0f172a;
         }
 
         .sidebar {
@@ -646,22 +557,17 @@
         }
 
         .sidebar-header {
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            flex-shrink: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
             padding: 12px 16px;
             padding-top: max(12px, env(safe-area-inset-top));
-            flex-shrink: 0;
+            z-index: 10;
         }
 
         @media (min-width: 768px) {
-            .sidebar-header { 
-                padding: 16px 20px; 
-                padding-top: max(16px, env(safe-area-inset-top)); 
-            }
+            .sidebar-header { padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top)); }
         }
 
         .search-box {
@@ -692,7 +598,6 @@
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-y: contain;
             min-height: 0;
-            display: block;
         }
 
         .user-item {
@@ -749,6 +654,7 @@
             .admin-chat { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); }
         }
 
+        /* ========== MOBILE ========== */
         .mobile-hidden { display: none !important; }
         .mobile-show { display: flex !important; }
 
@@ -756,16 +662,24 @@
             .mobile-hidden { display: flex !important; }
         }
 
+        /* ========== SCROLLBAR ========== */
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
         .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+        /* ========== ANIMATIONS ========== */
         @keyframes msgIn {
             from { opacity: 0; transform: translateY(6px) scale(0.98); }
             to { opacity: 1; transform: translateY(0) scale(1); }
         }
         .animate-msg-in { animation: msgIn 0.2s ease-out; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .animate-toast { animation: toastIn 0.3s ease-out; }
 
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(20px); }
@@ -828,7 +742,7 @@
                         <input 
                             id="usernameInput" 
                             type="text" 
-                            placeholder="যেমন: rahat, user123, "
+                            placeholder="যেমন: rahat, user123, admin"
                             class="w-full bg-slate-800/60 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all text-base"
                             autocomplete="off"
                             autocapitalize="off"
@@ -855,7 +769,8 @@
     </div>
 
     <!-- ========== USER CHAT SCREEN ========== -->
-    <div id="userScreen" class="hidden chat-wrapper">
+    <div id="userScreen" class="hidden app-root">
+        <!-- Header -->
         <div class="chat-header no-select">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -879,9 +794,11 @@
             </div>
         </div>
 
+        <!-- Messages -->
         <div id="userMessages" class="messages-scroll custom-scroll">
         </div>
 
+        <!-- Input -->
         <div class="input-bar">
             <div class="flex gap-2.5 max-w-5xl mx-auto items-end">
                 <input 
@@ -904,6 +821,7 @@
 
     <!-- ========== ADMIN SCREEN ========== -->
     <div id="adminScreen" class="hidden admin-layout">
+        <!-- Sidebar -->
         <div id="adminSidebar" class="sidebar">
             <div class="sidebar-header no-select">
                 <div class="flex items-center justify-between mb-3">
@@ -930,7 +848,9 @@
             </div>
         </div>
 
+        <!-- Chat Area -->
         <div class="admin-chat">
+            <!-- Empty State -->
             <div id="adminEmptyState" class="flex-1 flex items-center justify-center">
                 <div class="text-center text-slate-500 select-none px-4">
                     <div class="empty-state-icon">
@@ -941,7 +861,9 @@
                 </div>
             </div>
 
-            <div id="adminChatArea" class="hidden chat-wrapper">
+            <!-- Active Chat -->
+            <div id="adminChatArea" class="hidden app-root">
+                <!-- Chat Header -->
                 <div class="chat-header no-select">
                     <div class="flex items-center gap-2.5 md:gap-3">
                         <button id="mobileBackBtn" class="md:hidden text-slate-400 hover:text-white p-1 -ml-1">
@@ -962,9 +884,11 @@
                     </div>
                 </div>
 
+                <!-- Messages -->
                 <div id="adminMessages" class="messages-scroll custom-scroll">
                 </div>
 
+                <!-- Input -->
                 <div class="input-bar">
                     <div class="flex gap-2.5 max-w-5xl mx-auto items-end">
                         <input 
