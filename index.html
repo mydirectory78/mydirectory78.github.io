@@ -116,7 +116,7 @@
 
                 if (snapshot.empty) {
                     container.innerHTML = `
-                        <div class="flex flex-col items-center justify-center h-full text-slate-400 select-none px-4">
+                        <div class="flex flex-col items-center justify-center min-h-full text-slate-400 select-none px-4 py-20">
                             <div class="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center mb-3 ring-2 ring-slate-700/50">
                                 <i class="fas fa-lock text-2xl text-slate-600"></i>
                             </div>
@@ -142,7 +142,10 @@
                     const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
                     if (date && date !== lastDate) {
                         lastDate = date;
-                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
+                        const dateDiv = document.createElement('div');
+                        dateDiv.className = 'flex justify-center my-4';
+                        dateDiv.innerHTML = `<span class="date-pill">${date}</span>`;
+                        container.appendChild(dateDiv);
                     }
 
                     const div = document.createElement('div');
@@ -166,7 +169,7 @@
             unsubscribers.push(unsub);
         }
 
-        // ========== INSTANT SEND - NO POPUP ==========
+        // ========== INSTANT SEND ==========
         document.getElementById('userSendBtn').addEventListener('click', sendUserMsg);
         document.getElementById('userMsgInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendUserMsg(); });
 
@@ -175,18 +178,16 @@
             const text = input.value.trim();
             if (!text) return;
 
-            // INSTANT: Show message immediately on screen
             const container = document.getElementById('userMessages');
             const tempId = 'temp-' + Date.now();
             const now = new Date();
             const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-            // Remove empty state if exists
-            if (container.querySelector('.flex-col.items-center.justify-center.h-full')) {
-                container.innerHTML = '';
-            }
+            // Remove empty state
+            const emptyState = container.querySelector('.min-h-full');
+            if (emptyState) emptyState.remove();
 
-            // Add instant message with pending icon
+            // Add instant message
             const div = document.createElement('div');
             div.id = tempId;
             div.className = 'flex justify-end mb-2 px-3 md:px-5';
@@ -203,7 +204,6 @@
 
             input.value = '';
 
-            // Send to Firebase in background
             try {
                 const enc = await encryptMessage(text);
                 await addDoc(collection(db, 'messages'), {
@@ -212,7 +212,6 @@
                     encryptedText: enc, timestamp: serverTimestamp(), read: false
                 });
 
-                // Update pending to checkmark
                 const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
                 if (pendingIcon) {
                     pendingIcon.className = 'fas fa-check text-[10px] opacity-60 ml-0.5';
@@ -221,12 +220,10 @@
                     }, 500);
                 }
 
-                // Remove opacity
                 const bubble = document.querySelector(`#${tempId} > div`);
                 if (bubble) bubble.classList.remove('opacity-80');
 
             } catch (e) {
-                // Show error on the message itself
                 const pendingIcon = document.querySelector(`#${tempId} .pending-icon`);
                 if (pendingIcon) {
                     pendingIcon.className = 'fas fa-exclamation-circle text-[10px] text-red-400 ml-0.5';
@@ -323,7 +320,10 @@
                     const date = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('bn-BD', {day:'numeric', month:'short', year:'numeric'}) : '';
                     if (date && date !== lastDate) {
                         lastDate = date;
-                        container.innerHTML += `<div class="flex justify-center my-4"><span class="date-pill">${date}</span></div>`;
+                        const dateDiv = document.createElement('div');
+                        dateDiv.className = 'flex justify-center my-4';
+                        dateDiv.innerHTML = `<span class="date-pill">${date}</span>`;
+                        container.appendChild(dateDiv);
                     }
 
                     const div = document.createElement('div');
@@ -356,7 +356,6 @@
             const text = input.value.trim();
             if (!text) return;
 
-            // INSTANT: Show message immediately
             const container = document.getElementById('adminMessages');
             const tempId = 'temp-admin-' + Date.now();
             const now = new Date();
@@ -443,6 +442,7 @@
             overscroll-behavior: none;
         }
 
+        /* ========== LOGIN ========== */
         .login-screen {
             height: 100%;
             width: 100%;
@@ -472,22 +472,26 @@
             .glass-card { padding: 24px; border-radius: 20px; }
         }
 
-        .app-root {
-            height: 100%;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: #0f172a;
+        /* ========== CRITICAL FIX: CHAT LAYOUT ========== */
+        .chat-wrapper {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0f172a;
         }
 
+        /* ========== HEADER: STICKY TOP ========== */
         .chat-header {
-            flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -496,15 +500,21 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            z-index: 10;
+            height: 56px;
             min-height: 56px;
-            position: relative;
+            flex-shrink: 0;
         }
 
         @media (min-width: 768px) {
-            .chat-header { padding: 12px 20px; padding-top: max(12px, env(safe-area-inset-top)); min-height: 64px; }
+            .chat-header { 
+                padding: 12px 20px; 
+                padding-top: max(12px, env(safe-area-inset-top)); 
+                height: 64px;
+                min-height: 64px;
+            }
         }
 
+        /* ========== MESSAGES: SCROLLABLE MIDDLE ========== */
         .messages-scroll {
             flex: 1;
             overflow-y: auto;
@@ -513,9 +523,10 @@
             overscroll-behavior-y: contain;
             padding: 8px 0;
             background: #0f172a;
-            min-height: 0;
             position: relative;
             scroll-behavior: smooth;
+            min-height: 0;
+            display: block;
         }
 
         @media (min-width: 768px) {
@@ -525,19 +536,26 @@
             }
         }
 
+        /* ========== INPUT: STICKY BOTTOM ========== */
         .input-bar {
-            flex-shrink: 0;
+            position: sticky;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-top: 1px solid rgba(255,255,255,0.04);
             padding: 8px 12px;
             padding-bottom: max(8px, env(safe-area-inset-bottom));
-            z-index: 10;
-            position: relative;
+            flex-shrink: 0;
         }
 
         @media (min-width: 768px) {
-            .input-bar { padding: 12px 20px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+            .input-bar { 
+                padding: 12px 20px; 
+                padding-bottom: max(12px, env(safe-area-inset-bottom)); 
+            }
         }
 
         .msg-input {
@@ -600,16 +618,16 @@
             border: 1px solid rgba(255,255,255,0.04);
         }
 
+        /* ========== ADMIN LAYOUT ========== */
         .admin-layout {
-            height: 100%;
-            width: 100%;
-            display: flex;
-            overflow: hidden;
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
+            display: flex;
+            overflow: hidden;
+            background: #0f172a;
         }
 
         .sidebar {
@@ -628,17 +646,22 @@
         }
 
         .sidebar-header {
-            flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255,255,255,0.04);
             padding: 12px 16px;
             padding-top: max(12px, env(safe-area-inset-top));
-            z-index: 10;
+            flex-shrink: 0;
         }
 
         @media (min-width: 768px) {
-            .sidebar-header { padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top)); }
+            .sidebar-header { 
+                padding: 16px 20px; 
+                padding-top: max(16px, env(safe-area-inset-top)); 
+            }
         }
 
         .search-box {
@@ -669,6 +692,7 @@
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-y: contain;
             min-height: 0;
+            display: block;
         }
 
         .user-item {
@@ -831,7 +855,7 @@
     </div>
 
     <!-- ========== USER CHAT SCREEN ========== -->
-    <div id="userScreen" class="hidden app-root">
+    <div id="userScreen" class="hidden chat-wrapper">
         <div class="chat-header no-select">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -917,7 +941,7 @@
                 </div>
             </div>
 
-            <div id="adminChatArea" class="hidden app-root">
+            <div id="adminChatArea" class="hidden chat-wrapper">
                 <div class="chat-header no-select">
                     <div class="flex items-center gap-2.5 md:gap-3">
                         <button id="mobileBackBtn" class="md:hidden text-slate-400 hover:text-white p-1 -ml-1">
