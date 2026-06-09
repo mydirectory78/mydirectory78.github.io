@@ -89,7 +89,7 @@
             const username = document.getElementById('usernameInput').value.trim().toLowerCase();
             if (!username) { return; }
             currentUser = username;
-            isAdmin = username === 'admin';
+            isAdmin = username === '*পাগলাদাশু*';
             document.getElementById('loginScreen').classList.add('hidden');
             if (isAdmin) {
                 document.getElementById('adminScreen').classList.remove('hidden');
@@ -121,7 +121,7 @@
                                 <i class="fas fa-lock text-2xl text-slate-600"></i>
                             </div>
                             <p class="text-base font-medium text-slate-300">End-to-End Encrypted</p>
-                            <p class="text-sm mt-1 text-slate-500 text-center">Admin কে আপনার প্রথম message পাঠান</p>
+                            <p class="text-sm mt-1 text-slate-500 text-center">Joy কে আপনার প্রথম message পাঠান</p>
                         </div>`;
                     return;
                 }
@@ -828,7 +828,7 @@
                         <input 
                             id="usernameInput" 
                             type="text" 
-                            placeholder="যেমন: rahat, user123, admin"
+                            placeholder="যেমন: rahat, user123, "
                             class="w-full bg-slate-800/60 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all text-base"
                             autocomplete="off"
                             autocapitalize="off"
